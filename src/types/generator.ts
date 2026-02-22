@@ -88,6 +88,33 @@ export interface HexMap {
 	partyHex: number;
 }
 
+export interface AdventureSiteRoom {
+	id: number;
+	row: number;
+	col: number;
+	type: string;
+	description: string;
+	creature: boolean;
+	treasure: boolean;
+}
+
+export interface AdventureSite {
+	name: string;
+	construction: string;
+	ruinAction: string;
+	ruination: string;
+	inhabitant: string;
+	inhabitantAction: string;
+	inhabitantGoal: string;
+	secretHidden: string;
+	secret: string;
+	rooms: AdventureSiteRoom[];
+	gridRows: number;
+	gridCols: number;
+	selectedRoom: number;
+	partyMembers: { name: string; roomId: number }[];
+}
+
 export interface FactionGoal {
 	description: string;
 	progress: number;
@@ -100,6 +127,18 @@ export interface Faction {
 	goals: FactionGoal[];
 }
 
-export interface FactionTracker {
-	factions: Faction[];
+export interface TreasureItem {
+	name: string;
+	description: string;
+	category: string;
+	item: import("./character").Item;
+	curse?: { effect: string; liftedBy: string } | null;
+	power?: string;
+	pickedUp?: boolean;
+	pickedUpBy?: string;
+}
+
+export interface TreasureHoard {
+	items: TreasureItem[];
+	bonusDice: number;
 }

@@ -3,7 +3,7 @@ import { UsageDots } from "./character";
 export interface SpellTemplate {
 	name: string;
 	description: string;
-	repierceDuration?: string;
+	recharge: string; // how to recharge a usage dot
 	power: number[]; // e.g. [1, 2, 3] — dice count options
 }
 

@@ -12,10 +12,10 @@ import {
 	PACK_ROWS, PACK_COLS, PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
 } from "../engine/inventory";
 import { conditions } from "../data/conditions";
-import { weapons, armour, gear } from "../data/items";
+import { weapons, armour, ammunition, gear } from "../data/items";
 import { spellTemplates } from "../data/spells";
 import { div, button, span, el } from "../utils/dom-helpers";
-import { renderSpellPanels } from "./spell-panel";
+import { renderItemDetailPanels } from "./item-detail-panel";
 
 type GridName = "paw" | "body" | "pack";
 
@@ -48,6 +48,8 @@ function getGridDims(gridName: GridName): [number, number] {
 
 export class CharacterRenderer extends BaseRenderer<Character> {
 	protected blockType = "mausritter-character";
+	private addItemOpen = false;
+	private logOpen = false;
 
 	constructor(plugin: Plugin) {
 		super(plugin);
@@ -90,28 +92,71 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		character: Character,
 		updateState: (data: Character) => void
 	): void {
-		// Header
+		// Header row: name + rest buttons
 		const header = div("mausritter-character-header");
+
+		const headerTop = div("mausritter-character-header-top");
 		const nameInput = el("input", { class: "mausritter-character-name", type: "text" }) as HTMLInputElement;
 		nameInput.value = character.name;
 		nameInput.addEventListener("change", () => {
 			character.name = nameInput.value;
 			updateState(character);
 		});
-		header.appendChild(nameInput);
+		headerTop.appendChild(nameInput);
+
+		// Rest buttons inline with name
+		const restRow = div("mausritter-rest-row");
+		restRow.appendChild(
+			button("Short Rest", () => {
+				const log = shortRest(character);
+				character.log.push(...log);
+				updateState(character);
+			}, "mausritter-btn mausritter-btn-tiny")
+		);
+		restRow.appendChild(
+			button("Long Rest", () => {
+				const log = longRest(character, "str");
+				character.log.push(...log);
+				updateState(character);
+			}, "mausritter-btn mausritter-btn-tiny")
+		);
+		restRow.appendChild(
+			button("Full Rest", () => {
+				const log = fullRest(character);
+				character.log.push(...log);
+				updateState(character);
+			}, "mausritter-btn mausritter-btn-tiny")
+		);
+
+		// Level up button (next to rest if available)
+		if (canLevelUp(character)) {
+			restRow.appendChild(
+				button("Level Up!", () => {
+					const result = levelUp(character);
+					if (result) {
+						character.log.push(...result.log);
+						updateState(character);
+					}
+				}, "mausritter-btn mausritter-btn-primary mausritter-btn-tiny")
+			);
+		}
+
+		headerTop.appendChild(restRow);
+		header.appendChild(headerTop);
+
 		header.appendChild(span("mausritter-character-info",
 			`Level ${character.level} ${character.background} | ${character.birthsign} | ${character.coat} | ${character.physicalDetail}`
 		));
 		container.appendChild(header);
 
-		// Stats row
+		// Stats row — each stat box includes its save button
 		const statsRow = div("mausritter-stats-row");
 		for (const statName of ["str", "dex", "wil"] as StatName[]) {
 			statsRow.appendChild(this.renderStat(statName, character, updateState));
 		}
 		container.appendChild(statsRow);
 
-		// HP and Pips row
+		// HP, Pips, XP row — HP and Pips as editable inputs
 		const resourceRow = div("mausritter-resource-row");
 		resourceRow.appendChild(this.renderHp(character, updateState));
 		resourceRow.appendChild(this.renderPips(character, updateState));
@@ -121,96 +166,37 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		// Inventory
 		container.appendChild(this.renderInventory(character, updateState));
 
-		// Spell panels (for any spell items across all grids)
-		const spellPanel = renderSpellPanels(
+		// Item detail panels (spells, magic swords, trinkets, etc.)
+		const itemDetailPanel = renderItemDetailPanels(
 			[character.pawGrid, character.bodyGrid, character.packGrid],
 			character,
 			updateState
 		);
-		if (spellPanel) container.appendChild(spellPanel);
+		if (itemDetailPanel) container.appendChild(itemDetailPanel);
 
-		// Add item UI
-		container.appendChild(this.renderAddItem(character, updateState));
+		// Add item — collapsible
+		const addItemDetails = document.createElement("details");
+		addItemDetails.className = "mausritter-collapsible";
+		if (this.addItemOpen) addItemDetails.open = true;
+		addItemDetails.addEventListener("toggle", () => { this.addItemOpen = addItemDetails.open; });
+		const addItemSummary = document.createElement("summary");
+		addItemSummary.className = "mausritter-collapsible-summary";
+		addItemSummary.textContent = "Add Item / Condition";
+		addItemDetails.appendChild(addItemSummary);
+		addItemDetails.appendChild(this.renderAddItem(character, updateState));
+		container.appendChild(addItemDetails);
 
-		// Action buttons
-		const actions = div("mausritter-actions");
-
-		// Save buttons
-		const saveGroup = div("mausritter-action-group");
-		saveGroup.appendChild(span("mausritter-action-label", "Save:"));
-		for (const stat of ["str", "dex", "wil"] as StatName[]) {
-			saveGroup.appendChild(
-				button(stat.toUpperCase(), () => {
-					const result = rollSave(character, stat);
-					character.log.push(
-						`${stat.toUpperCase()} save: rolled ${result.roll} vs ${result.statValue} — ${result.success ? "Success!" : "Failure!"}`
-					);
-					updateState(character);
-				}, "mausritter-btn mausritter-btn-small")
-			);
-		}
-		actions.appendChild(saveGroup);
-
-		// Rest buttons
-		const restGroup = div("mausritter-action-group");
-		restGroup.appendChild(
-			button("Short Rest", () => {
-				const log = shortRest(character);
-				character.log.push(...log);
-				updateState(character);
-			}, "mausritter-btn mausritter-btn-small")
-		);
-		restGroup.appendChild(
-			button("Long Rest", () => {
-				const log = longRest(character, "str");
-				character.log.push(...log);
-				updateState(character);
-			}, "mausritter-btn mausritter-btn-small")
-		);
-		restGroup.appendChild(
-			button("Full Rest", () => {
-				const log = fullRest(character);
-				character.log.push(...log);
-				updateState(character);
-			}, "mausritter-btn mausritter-btn-small")
-		);
-		actions.appendChild(restGroup);
-
-		// Level up
-		if (canLevelUp(character)) {
-			actions.appendChild(
-				button("Level Up!", () => {
-					const result = levelUp(character);
-					if (result) {
-						character.log.push(...result.log);
-						updateState(character);
-					}
-				}, "mausritter-btn mausritter-btn-primary")
-			);
-		}
-
-		// Add condition
-		const condGroup = div("mausritter-action-group");
-		condGroup.appendChild(span("mausritter-action-label", "Add Condition:"));
-		for (const cond of conditions) {
-			condGroup.appendChild(
-				button(cond.name, () => {
-					const added = addConditionToInventory(character, cond.name);
-					if (added) {
-						character.log.push(`Gained condition: ${cond.name} — ${cond.effect}`);
-					} else {
-						character.log.push(`No inventory space for condition: ${cond.name}`);
-					}
-					updateState(character);
-				}, "mausritter-btn mausritter-btn-small mausritter-btn-condition")
-			);
-		}
-		actions.appendChild(condGroup);
-
-		container.appendChild(actions);
-
-		// Action log
-		container.appendChild(this.renderLog(character));
+		// Action log — collapsible
+		const logDetails = document.createElement("details");
+		logDetails.className = "mausritter-collapsible";
+		if (this.logOpen) logDetails.open = true;
+		logDetails.addEventListener("toggle", () => { this.logOpen = logDetails.open; });
+		const logSummary = document.createElement("summary");
+		logSummary.className = "mausritter-collapsible-summary";
+		logSummary.textContent = "Action Log";
+		logDetails.appendChild(logSummary);
+		logDetails.appendChild(this.renderLog(character));
+		container.appendChild(logDetails);
 	}
 
 	// ---- Stat / Resource renderers ----
@@ -233,35 +219,65 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		values.appendChild(span("mausritter-stat-slash", "/"));
 		values.appendChild(maxInput);
 		box.appendChild(values);
+
+		// Save button for this stat
+		box.appendChild(
+			button("Save", () => {
+				const result = rollSave(character, statName);
+				character.log.push(
+					`${statName.toUpperCase()} save: rolled ${result.roll} vs ${result.statValue} — ${result.success ? "Success!" : "Failure!"}`
+				);
+				updateState(character);
+			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-save")
+		);
+
 		return box;
 	}
 
 	private renderHp(character: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["HP"]));
-		const controls = div("mausritter-resource-controls");
-		controls.appendChild(button("-", () => { character.hp.current = Math.max(0, character.hp.current - 1); updateState(character); }, "mausritter-btn mausritter-btn-tiny"));
-		controls.appendChild(span("mausritter-resource-value", `${character.hp.current}/${character.hp.max}`));
-		controls.appendChild(button("+", () => { character.hp.current = Math.min(character.hp.max, character.hp.current + 1); updateState(character); }, "mausritter-btn mausritter-btn-tiny"));
-		box.appendChild(controls);
+		const values = div("mausritter-stat-values");
+
+		const currentInput = el("input", { class: "mausritter-stat-input mausritter-stat-current", type: "number" }) as HTMLInputElement;
+		currentInput.value = String(character.hp.current);
+		currentInput.addEventListener("change", () => {
+			character.hp.current = Math.max(0, parseInt(currentInput.value) || 0);
+			updateState(character);
+		});
+
+		const maxInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
+		maxInput.value = String(character.hp.max);
+		maxInput.addEventListener("change", () => {
+			character.hp.max = Math.max(1, parseInt(maxInput.value) || 1);
+			updateState(character);
+		});
+
+		values.appendChild(currentInput);
+		values.appendChild(span("mausritter-stat-slash", "/"));
+		values.appendChild(maxInput);
+		box.appendChild(values);
 		return box;
 	}
 
 	private renderPips(character: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["Pips"]));
-		const controls = div("mausritter-resource-controls");
-		controls.appendChild(button("-", () => { character.pips = Math.max(0, character.pips - 1); updateState(character); }, "mausritter-btn mausritter-btn-tiny"));
-		controls.appendChild(span("mausritter-resource-value", String(character.pips)));
-		controls.appendChild(button("+", () => { character.pips += 1; updateState(character); }, "mausritter-btn mausritter-btn-tiny"));
-		box.appendChild(controls);
+
+		const pipsInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
+		pipsInput.value = String(character.pips);
+		pipsInput.addEventListener("change", () => {
+			character.pips = Math.max(0, parseInt(pipsInput.value) || 0);
+			updateState(character);
+		});
+		box.appendChild(pipsInput);
 		return box;
 	}
 
 	private renderXp(character: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["XP"]));
-		const xpInput = el("input", { class: "mausritter-stat-input mausritter-xp-input", type: "number" }) as HTMLInputElement;
+		const xpInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
 		xpInput.value = String(character.xp);
 		xpInput.addEventListener("change", () => { character.xp = parseInt(xpInput.value) || 0; updateState(character); });
 		box.appendChild(xpInput);
@@ -535,18 +551,16 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 			`mausritter-item ${isCondition ? "mausritter-item-condition" : `mausritter-item-${item.type}`}`
 		);
 
-		if (item.width > 1 || item.height > 1) {
-			itemEl.appendChild(span("mausritter-item-size", `${item.width}x${item.height}`));
+		// Top-right info (damage dice, defence, size)
+		const topRight: string[] = [];
+		if (item.damage) topRight.push(item.damage);
+		if (item.defence) topRight.push(`+${item.defence}`);
+		if (item.width > 1 || item.height > 1) topRight.push(`${item.width}x${item.height}`);
+		if (topRight.length > 0) {
+			itemEl.appendChild(span("mausritter-item-topright", topRight.join(" ")));
 		}
 
 		itemEl.appendChild(span("mausritter-item-name", item.name));
-
-		if (item.damage) {
-			itemEl.appendChild(span("mausritter-item-detail", item.damage));
-		}
-		if (item.defence) {
-			itemEl.appendChild(span("mausritter-item-detail", `+${item.defence} Armour`));
-		}
 
 		if (item.usage) {
 			const usageEl = div("mausritter-usage-dots");
@@ -560,11 +574,7 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 				});
 				usageEl.appendChild(dot);
 			}
-			if (opts.onUsageCheck && item.type !== "spell") {
-				usageEl.appendChild(
-					button("Check", () => opts.onUsageCheck!(item), "mausritter-btn mausritter-btn-tiny")
-				);
-			}
+			// Check button removed — usage tracking is in the Item Details panel
 			itemEl.appendChild(usageEl);
 		}
 
@@ -610,8 +620,8 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 	private renderAddItem(character: Character, updateState: (data: Character) => void): HTMLElement {
 		const section = div("mausritter-add-item");
-		section.appendChild(div("mausritter-subtitle", ["Add Item"]));
 
+		// Standard item picker
 		const row = div("mausritter-add-item-row");
 
 		const categorySelect = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
@@ -627,6 +637,7 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		const categories: [string, Omit<Item, "equipped">[]][] = [
 			["Weapons", weapons],
 			["Armour", armour],
+			["Ammunition", ammunition],
 			["Gear", gear],
 			["Spells", spellItems],
 		];
@@ -707,6 +718,25 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		);
 
 		section.appendChild(customRow);
+
+		// Conditions
+		const condRow = div("mausritter-add-item-row mausritter-condition-row");
+		condRow.appendChild(span("mausritter-action-label", "Conditions:"));
+		for (const cond of conditions) {
+			condRow.appendChild(
+				button(cond.name, () => {
+					const added = addConditionToInventory(character, cond.name);
+					if (added) {
+						character.log.push(`Gained condition: ${cond.name} — ${cond.effect}`);
+					} else {
+						character.log.push(`No inventory space for condition: ${cond.name}`);
+					}
+					updateState(character);
+				}, "mausritter-btn mausritter-btn-tiny mausritter-btn-condition")
+			);
+		}
+		section.appendChild(condRow);
+
 		return section;
 	}
 
@@ -714,7 +744,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 	private renderLog(character: Character): HTMLElement {
 		const logSection = div("mausritter-log");
-		logSection.appendChild(div("mausritter-subtitle", ["Action Log"]));
 		const entries = [...character.log].reverse().slice(0, 20);
 		for (const entry of entries) {
 			logSection.appendChild(div("mausritter-log-entry", [entry]));

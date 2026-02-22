@@ -151,6 +151,13 @@
 	margin-bottom: 12px;
 }
 
+.mausritter-character-header-top {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+
 .mausritter-character-name {
 	font-size: 1.4em;
 	font-weight: 700;
@@ -158,9 +165,15 @@
 	border-bottom: 2px solid var(--background-modifier-border);
 	background: transparent;
 	color: var(--text-normal);
-	width: 100%;
+	flex: 1;
+	min-width: 0;
 	padding: 4px 0;
-	margin-bottom: 4px;
+}
+
+.mausritter-rest-row {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
 }
 
 .mausritter-character-info {
@@ -198,7 +211,7 @@
 }
 
 .mausritter-stat-input {
-	width: 40px;
+	width: 75px;
 	text-align: center;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 4px;
@@ -213,7 +226,12 @@
 	color: var(--text-muted);
 }
 
-.mausritter-xp-input {
+.mausritter-resource-input {
+	width: 100% !important;
+}
+
+.mausritter-btn-save {
+	margin-top: 4px;
 	width: 100%;
 }
 
@@ -300,19 +318,19 @@
 }
 
 .mausritter-grid-paw {
-	grid-template-rows: 60px;
+	grid-template-rows: 80px;
 	grid-template-columns: repeat(2, 1fr);
 	max-width: 240px;
 }
 
 .mausritter-grid-body {
-	grid-template-rows: 60px;
+	grid-template-rows: 80px;
 	grid-template-columns: repeat(2, 1fr);
 	max-width: 240px;
 }
 
 .mausritter-grid-pack {
-	grid-template-rows: repeat(2, 60px);
+	grid-template-rows: repeat(2, 80px);
 	grid-template-columns: repeat(3, 1fr);
 	max-width: 360px;
 }
@@ -321,7 +339,7 @@
 	border: 2px dashed var(--background-modifier-border);
 	border-radius: 6px;
 	padding: 4px;
-	min-height: 56px;
+	min-height: 76px;
 	position: relative;
 	transition: border-color 0.15s, background 0.15s;
 }
@@ -401,6 +419,7 @@
 	font-size: 0.8em;
 	height: 100%;
 	box-sizing: border-box;
+	overflow: hidden;
 }
 
 .mausritter-item-name {
@@ -408,16 +427,11 @@
 	display: block;
 }
 
-.mausritter-item-detail {
-	color: var(--text-muted);
-	font-size: 0.9em;
-	display: block;
-}
-
-.mausritter-item-size {
-	font-size: 0.7em;
-	color: var(--text-faint);
+.mausritter-item-topright {
 	float: right;
+	font-size: 0.75em;
+	font-weight: 600;
+	color: var(--text-muted);
 }
 
 .mausritter-item-actions {
@@ -518,12 +532,40 @@
 	color: var(--text-muted);
 }
 
-/* Add Item */
-.mausritter-add-item {
+/* Collapsible sections */
+.mausritter-collapsible {
 	margin: 8px 0;
-	padding: 8px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
+}
+
+.mausritter-collapsible-summary {
+	padding: 8px 12px;
+	font-weight: 600;
+	font-size: 0.9em;
+	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+
+.mausritter-collapsible-summary:hover {
+	color: var(--text-normal);
+}
+
+.mausritter-collapsible[open] > .mausritter-collapsible-summary {
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Condition row in add item */
+.mausritter-condition-row {
+	padding-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 2px;
+}
+
+/* Add Item */
+.mausritter-add-item {
+	padding: 8px;
 }
 
 .mausritter-add-item-row {
@@ -546,7 +588,7 @@
 
 /* Log */
 .mausritter-log {
-	margin-top: 12px;
+	padding: 8px;
 	max-height: 200px;
 	overflow-y: auto;
 }
@@ -951,6 +993,13 @@
 	box-shadow: 0 0 6px hsla(270, 60%, 50%, 0.4);
 }
 
+.mausritter-spell-recharge {
+	margin-top: 4px;
+	font-size: 0.85em;
+	font-style: italic;
+	color: var(--text-muted);
+}
+
 .mausritter-spell-cast {
 	display: flex;
 	gap: 6px;
@@ -961,6 +1010,141 @@
 	margin-top: 8px;
 	max-height: 120px;
 	overflow-y: auto;
+}
+
+/* ============ MAGIC SWORD PANEL ============ */
+
+.mausritter-sword-panel {
+	margin-top: 12px;
+}
+
+.mausritter-sword-cards {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.mausritter-sword-card {
+	border: 1px solid hsl(210, 50%, 50%);
+	border-radius: 6px;
+	padding: 10px;
+	background: var(--background-secondary);
+	width: 280px;
+}
+
+.mausritter-sword-name {
+	font-size: 1.1em;
+	font-weight: 700;
+	color: hsl(210, 60%, 50%);
+}
+
+.mausritter-sword-damage {
+	font-size: 0.9em;
+	font-weight: 600;
+	color: var(--text-normal);
+	margin-top: 2px;
+}
+
+.mausritter-sword-desc {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	margin: 6px 0;
+	font-style: italic;
+}
+
+.mausritter-sword-check-result {
+	font-size: 0.85em;
+	font-weight: 600;
+	margin-top: 4px;
+	min-height: 1.2em;
+}
+
+.mausritter-sword-check-safe {
+	color: hsl(130, 50%, 50%);
+}
+
+.mausritter-sword-check-fail {
+	color: hsl(0, 60%, 55%);
+}
+
+.mausritter-sword-note {
+	font-size: 0.75em;
+	color: var(--text-faint);
+	margin-top: 4px;
+	font-style: italic;
+}
+
+/* ============ ITEM DETAIL PANEL ============ */
+
+.mausritter-item-detail-panel {
+	margin-top: 12px;
+}
+
+.mausritter-item-detail-cards {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.mausritter-item-detail-card {
+	border: 1px solid hsl(40, 40%, 50%);
+	border-radius: 6px;
+	padding: 10px;
+	background: var(--background-secondary);
+	width: 260px;
+}
+
+.mausritter-item-detail-card-spell {
+	border-color: hsl(270, 40%, 60%);
+}
+
+.mausritter-item-detail-card-sword {
+	border-color: hsl(190, 70%, 50%);
+}
+
+.mausritter-item-detail-card-weapon {
+	border-color: hsl(210, 60%, 50%);
+}
+
+.mausritter-item-detail-card-armour {
+	border-color: hsl(120, 40%, 50%);
+}
+
+.mausritter-item-detail-card-name {
+	font-size: 1.1em;
+	font-weight: 700;
+	color: hsl(40, 50%, 50%);
+}
+
+.mausritter-item-detail-card-name-spell {
+	color: hsl(270, 50%, 50%);
+}
+
+.mausritter-item-detail-card-name-sword {
+	color: hsl(190, 70%, 50%);
+}
+
+.mausritter-item-detail-card-name-weapon {
+	color: hsl(210, 60%, 50%);
+}
+
+.mausritter-item-detail-card-name-armour {
+	color: hsl(120, 40%, 50%);
+}
+
+.mausritter-item-detail-card-stat {
+	display: block;
+	font-size: 0.9em;
+	font-weight: 600;
+	color: var(--text-normal);
+	margin-top: 2px;
+}
+
+.mausritter-item-detail-card-desc {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	margin-top: 6px;
+	font-style: italic;
 }
 
 /* ============ HOMEBREW DATA ============ */
@@ -1808,4 +1992,682 @@
 	font-size: 0.9em;
 	color: var(--text-normal);
 	margin-bottom: 4px;
+}
+
+/* ============ ADVENTURE SITES ============ */
+
+.mausritter-site-empty {
+	text-align: center;
+	padding: 20px;
+}
+
+.mausritter-site-empty-text {
+	color: var(--text-muted);
+	font-style: italic;
+	margin-bottom: 12px;
+}
+
+.mausritter-site-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 12px;
+	background: var(--background-secondary);
+}
+
+.mausritter-site-card-edit {
+	border-color: var(--interactive-accent);
+	border-style: dashed;
+}
+
+.mausritter-site-header {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+	align-items: center;
+}
+
+.mausritter-site-header-actions {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.mausritter-site-name-display {
+	flex: 1;
+	font-size: 1.2em;
+	font-weight: 700;
+	color: var(--text-normal);
+	padding: 2px 0;
+}
+
+.mausritter-site-name-input {
+	flex: 1;
+	font-size: 1.2em;
+	font-weight: 700;
+	border: none;
+	border-bottom: 2px solid var(--background-modifier-border);
+	background: transparent;
+	color: var(--text-normal);
+	padding: 2px 0;
+}
+
+.mausritter-site-summary {
+	font-size: 0.9em;
+	color: var(--text-normal);
+	line-height: 1.5;
+	margin-bottom: 12px;
+	padding: 8px;
+	background: var(--background-primary);
+	border-radius: 4px;
+}
+
+/* Grid map */
+
+.mausritter-site-grid {
+	display: grid;
+	gap: 4px;
+	margin-bottom: 12px;
+}
+
+.mausritter-site-cell {
+	min-width: 90px;
+	min-height: 90px;
+	border-radius: 6px;
+	position: relative;
+}
+
+.mausritter-site-cell-empty {
+	/* Invisible — preserves grid spacing */
+}
+
+.mausritter-site-cell-filled {
+	border: 2px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	padding: 6px;
+	cursor: pointer;
+	transition: border-color 0.15s, box-shadow 0.15s;
+	display: flex;
+	flex-direction: column;
+}
+
+.mausritter-site-cell-filled:hover {
+	border-color: var(--text-muted);
+}
+
+.mausritter-site-cell-selected {
+	outline: 3px solid var(--interactive-accent);
+	outline-offset: -3px;
+	box-shadow: 0 0 8px color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+	z-index: 3;
+}
+
+.mausritter-site-cell-id {
+	position: absolute;
+	top: 4px;
+	left: 6px;
+	font-size: 0.7em;
+	font-weight: 700;
+	color: var(--text-muted);
+}
+
+.mausritter-site-cell-type {
+	font-size: 0.8em;
+	font-weight: 700;
+	color: var(--text-normal);
+	margin-top: 14px;
+}
+
+.mausritter-site-cell-icons {
+	position: absolute;
+	top: 3px;
+	right: 4px;
+	display: flex;
+	gap: 2px;
+}
+
+.mausritter-site-cell-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 3px;
+	font-size: 0.65em;
+	font-weight: 700;
+}
+
+.mausritter-site-party-marker {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	font-size: 0.6em;
+	font-weight: 700;
+	color: white;
+	flex-shrink: 0;
+	text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.mausritter-site-cell-creature-icon {
+	background: hsl(15, 70%, 92%);
+	color: hsl(15, 70%, 35%);
+}
+
+.theme-dark .mausritter-site-cell-creature-icon {
+	background: hsl(15, 40%, 25%);
+	color: hsl(15, 70%, 75%);
+}
+
+.mausritter-site-cell-treasure-icon {
+	background: hsl(45, 80%, 88%);
+	color: hsl(45, 80%, 30%);
+}
+
+.theme-dark .mausritter-site-cell-treasure-icon {
+	background: hsl(45, 50%, 22%);
+	color: hsl(45, 80%, 72%);
+}
+
+/* Room type cell backgrounds */
+
+.mausritter-site-cell-empty.mausritter-site-cell-filled {
+	background: var(--background-primary);
+}
+
+.mausritter-site-cell-obstacle {
+	background: hsl(30, 60%, 95%);
+}
+
+.theme-dark .mausritter-site-cell-obstacle {
+	background: hsl(30, 20%, 18%);
+}
+
+.mausritter-site-cell-trap {
+	background: hsl(0, 50%, 96%);
+}
+
+.theme-dark .mausritter-site-cell-trap {
+	background: hsl(0, 20%, 18%);
+}
+
+.mausritter-site-cell-puzzle {
+	background: hsl(210, 50%, 96%);
+}
+
+.theme-dark .mausritter-site-cell-puzzle {
+	background: hsl(210, 20%, 18%);
+}
+
+.mausritter-site-cell-lair {
+	background: hsl(270, 40%, 96%);
+}
+
+.theme-dark .mausritter-site-cell-lair {
+	background: hsl(270, 20%, 18%);
+}
+
+/* Legend */
+
+.mausritter-site-legend {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.mausritter-site-legend-item {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.mausritter-site-legend-label {
+	font-size: 0.8em;
+	color: var(--text-muted);
+}
+
+/* Detail panel */
+
+.mausritter-site-detail {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 10px 12px;
+	background: var(--background-primary);
+	min-height: 48px;
+	margin-bottom: 8px;
+}
+
+.mausritter-site-detail-hint {
+	color: var(--text-muted);
+	font-style: italic;
+	font-size: 0.85em;
+}
+
+.mausritter-site-detail-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-bottom: 6px;
+}
+
+.mausritter-site-detail-room-id {
+	font-weight: 700;
+	font-size: 0.95em;
+	color: var(--text-normal);
+}
+
+.mausritter-site-detail-desc {
+	font-size: 0.9em;
+	color: var(--text-normal);
+	line-height: 1.5;
+}
+
+.mausritter-site-detail-desc-input {
+	width: 100%;
+	min-height: 60px;
+	padding: 6px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: 0.85em;
+	font-family: inherit;
+	line-height: 1.4;
+	resize: vertical;
+	box-sizing: border-box;
+}
+
+/* Badges in detail panel (reused) */
+
+.mausritter-site-room-badge {
+	font-size: 0.75em;
+	font-weight: 600;
+	padding: 1px 6px;
+	border-radius: 3px;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.mausritter-site-room-badge-empty {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.mausritter-site-room-badge-obstacle {
+	background: hsl(30, 60%, 90%);
+	color: hsl(30, 60%, 30%);
+}
+
+.theme-dark .mausritter-site-room-badge-obstacle {
+	background: hsl(30, 40%, 25%);
+	color: hsl(30, 60%, 75%);
+}
+
+.mausritter-site-room-badge-trap {
+	background: hsl(0, 60%, 90%);
+	color: hsl(0, 60%, 35%);
+}
+
+.theme-dark .mausritter-site-room-badge-trap {
+	background: hsl(0, 40%, 25%);
+	color: hsl(0, 60%, 75%);
+}
+
+.mausritter-site-room-badge-puzzle {
+	background: hsl(210, 60%, 90%);
+	color: hsl(210, 60%, 30%);
+}
+
+.theme-dark .mausritter-site-room-badge-puzzle {
+	background: hsl(210, 40%, 25%);
+	color: hsl(210, 60%, 75%);
+}
+
+.mausritter-site-room-badge-lair {
+	background: hsl(270, 50%, 90%);
+	color: hsl(270, 50%, 30%);
+}
+
+.theme-dark .mausritter-site-room-badge-lair {
+	background: hsl(270, 35%, 25%);
+	color: hsl(270, 50%, 75%);
+}
+
+.mausritter-site-room-icon {
+	font-size: 0.75em;
+	font-weight: 600;
+	padding: 1px 5px;
+	border-radius: 3px;
+}
+
+.mausritter-site-room-creature {
+	background: hsl(15, 70%, 92%);
+	color: hsl(15, 70%, 35%);
+}
+
+.theme-dark .mausritter-site-room-creature {
+	background: hsl(15, 40%, 25%);
+	color: hsl(15, 70%, 75%);
+}
+
+.mausritter-site-room-treasure {
+	background: hsl(45, 80%, 88%);
+	color: hsl(45, 80%, 30%);
+}
+
+.theme-dark .mausritter-site-room-treasure {
+	background: hsl(45, 50%, 22%);
+	color: hsl(45, 80%, 72%);
+}
+
+/* Edit mode fields */
+
+.mausritter-site-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 12px;
+}
+
+.mausritter-site-field-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.mausritter-site-field-label {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--text-muted);
+	min-width: 90px;
+	text-align: right;
+}
+
+.mausritter-site-field-input {
+	flex: 1;
+	padding: 3px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.85em;
+}
+
+.mausritter-site-room-type-select {
+	padding: 2px 4px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.85em;
+}
+
+.mausritter-site-room-checkbox-label {
+	font-size: 0.8em;
+	color: var(--text-normal);
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	cursor: pointer;
+}
+
+.mausritter-site-grid-actions {
+	display: flex;
+	gap: 6px;
+}
+
+/* Placeable empty cells in edit mode */
+
+.mausritter-site-cell-placeable {
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: border-color 0.15s, background 0.15s;
+}
+
+.mausritter-site-cell-placeable:hover {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+/* Party member details */
+
+.mausritter-site-detail-party {
+	margin-top: 8px;
+	font-size: 0.85em;
+}
+
+.mausritter-site-detail-party-label {
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.mausritter-site-detail-party-names {
+	color: var(--text-normal);
+}
+
+.mausritter-site-detail-party-actions {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+	margin-top: 6px;
+}
+
+.mausritter-site-detail-party-add {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+	margin-top: 8px;
+}
+
+.mausritter-site-party-input {
+	flex: 1;
+	max-width: 200px;
+	padding: 3px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.85em;
+}
+
+.mausritter-site-party-list {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	margin-top: 6px;
+}
+
+.mausritter-site-party-member {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.85em;
+}
+
+.mausritter-site-party-member-name {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.mausritter-site-party-member-room {
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+/* ── Treasure Hoard ── */
+
+.mausritter-treasure {
+	font-size: 0.9em;
+}
+
+.mausritter-treasure-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	padding: 20px;
+}
+
+.mausritter-treasure-empty-text {
+	color: var(--text-muted);
+	font-size: 1em;
+}
+
+.mausritter-treasure-checkboxes {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 100%;
+	max-width: 400px;
+}
+
+.mausritter-treasure-checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.9em;
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
+.mausritter-treasure-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 10px;
+}
+
+.mausritter-treasure-header .mausritter-title {
+	margin: 0;
+}
+
+.mausritter-treasure-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.mausritter-treasure-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.mausritter-treasure-card {
+	position: relative;
+	padding: 10px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.mausritter-treasure-card-picked-up {
+	opacity: 0.6;
+	border-style: dashed;
+}
+
+.mausritter-treasure-card-edit {
+	border-style: dashed;
+}
+
+.mausritter-treasure-badge {
+	display: inline-block;
+	align-self: flex-start;
+	padding: 1px 8px;
+	border-radius: 10px;
+	font-size: 0.75em;
+	font-weight: 600;
+	color: white;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.mausritter-treasure-name {
+	font-size: 1em;
+	color: var(--text-normal);
+}
+
+.mausritter-treasure-desc {
+	font-size: 0.85em;
+	color: var(--text-muted);
+}
+
+.mausritter-treasure-power {
+	font-size: 0.85em;
+	color: hsl(280, 50%, 60%);
+	font-style: italic;
+}
+
+.mausritter-treasure-curse {
+	font-size: 0.85em;
+	color: hsl(0, 60%, 55%);
+	padding: 4px 8px;
+	border-left: 3px solid hsl(0, 60%, 55%);
+	background: hsla(0, 60%, 55%, 0.05);
+	border-radius: 0 4px 4px 0;
+}
+
+.mausritter-treasure-curse-label {
+	font-weight: 600;
+}
+
+.mausritter-treasure-picked-up-label {
+	font-size: 0.8em;
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.mausritter-treasure-give-btn {
+	align-self: flex-start;
+	margin-top: 4px;
+}
+
+.mausritter-treasure-dropdown {
+	z-index: 10;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	display: flex;
+	flex-direction: column;
+	min-width: 160px;
+	overflow: hidden;
+}
+
+.mausritter-treasure-dropdown-option {
+	padding: 6px 12px;
+	border: none;
+	background: none;
+	text-align: left;
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--text-normal);
+	transition: background 0.1s;
+}
+
+.mausritter-treasure-dropdown-option:hover {
+	background: var(--background-modifier-hover);
+}
+
+.mausritter-treasure-input {
+	width: 100%;
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.9em;
+}
+
+.theme-dark .mausritter-treasure-badge {
+	opacity: 0.9;
+}
+
+.theme-dark .mausritter-treasure-curse {
+	background: hsla(0, 60%, 55%, 0.1);
 }

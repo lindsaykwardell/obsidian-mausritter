@@ -36,4 +36,10 @@ export const conditions: Condition[] = [
 		clear: "Herbal remedy or full rest at a safe haven.",
 		slots: 1,
 	},
+	{
+		name: "Drained",
+		effect: "Disadvantage on all saves. Take d6 damage at end of each Turn.",
+		clear: "Full rest at a safe haven.",
+		slots: 1,
+	},
 ];

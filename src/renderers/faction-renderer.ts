@@ -1,12 +1,12 @@
 import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
-import { Faction, FactionGoal, FactionTracker } from "../types/generator";
-import { generateFaction, generateFactionSet } from "../engine/faction";
+import { Faction, FactionGoal } from "../types/generator";
+import { generateFaction } from "../engine/faction";
 import { div, button, span, el } from "../utils/dom-helpers";
 
-export class FactionRenderer extends BaseRenderer<FactionTracker> {
+export class FactionRenderer extends BaseRenderer<Faction> {
 	protected blockType = "mausritter-faction";
-	private editingIndex: number | null = null;
+	private editing = false;
 
 	constructor(plugin: Plugin) {
 		super(plugin);
@@ -14,89 +14,71 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 
 	protected render(
 		container: HTMLElement,
-		data: FactionTracker | null,
-		updateState: (data: FactionTracker) => void
+		data: Faction | null,
+		updateState: (data: Faction) => void
 	): void {
 		container.addClass("mausritter-faction");
 
-		if (!data || !data.factions || data.factions.length === 0) {
+		if (!data || !data.name) {
 			this.renderEmpty(container, updateState);
 			return;
 		}
 
-		container.appendChild(div("mausritter-title", ["Factions"]));
-
-		// Top-level actions
-		const actions = div("mausritter-faction-actions");
-		actions.appendChild(
-			button("Add Faction", () => {
-				data.factions.push(generateFaction());
-				updateState(data);
-			}, "mausritter-btn mausritter-btn-primary")
-		);
-		actions.appendChild(
-			button("Regenerate All", () => {
-				this.editingIndex = null;
-				const newData = generateFactionSet(data.factions.length);
-				updateState(newData);
-			}, "mausritter-btn")
-		);
-		container.appendChild(actions);
-
-		// Faction cards
-		const cards = div("mausritter-faction-cards");
-		data.factions.forEach((faction, index) => {
-			if (this.editingIndex === index) {
-				cards.appendChild(this.renderEditCard(faction, index, data, updateState));
-			} else {
-				cards.appendChild(this.renderReadCard(faction, index, data, updateState));
-			}
-		});
-		container.appendChild(cards);
+		if (this.editing) {
+			this.renderEdit(container, data, updateState);
+		} else {
+			this.renderRead(container, data, updateState);
+		}
 	}
 
 	private renderEmpty(
 		container: HTMLElement,
-		updateState: (data: FactionTracker) => void
+		updateState: (data: Faction) => void
 	): void {
 		const empty = div("mausritter-faction-empty");
 		empty.appendChild(
-			div("mausritter-faction-empty-text", ["No factions generated yet."])
+			div("mausritter-faction-empty-text", ["No faction generated yet."])
 		);
 		empty.appendChild(
-			button("Generate Factions", () => {
-				updateState(generateFactionSet());
+			button("Generate Faction", () => {
+				updateState(generateFaction());
 			}, "mausritter-btn mausritter-btn-primary")
 		);
 		container.appendChild(empty);
 	}
 
-	// ── Read-only card ──
+	// ── Read-only view ──
 
-	private renderReadCard(
-		faction: Faction,
-		index: number,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
-	): HTMLElement {
+	private renderRead(
+		container: HTMLElement,
+		data: Faction,
+		updateState: (data: Faction) => void
+	): void {
 		const card = div("mausritter-faction-card");
 
 		// Header
 		const header = div("mausritter-faction-header");
-		header.appendChild(div("mausritter-faction-name-display", [faction.name]));
-		header.appendChild(
+		header.appendChild(div("mausritter-faction-name-display", [data.name]));
+		const headerActions = div("mausritter-faction-header-actions");
+		headerActions.appendChild(
 			button("Edit", () => {
-				this.editingIndex = index;
+				this.editing = true;
 				updateState(data);
 			}, "mausritter-btn mausritter-btn-small")
 		);
+		headerActions.appendChild(
+			button("Regenerate", () => {
+				updateState(generateFaction());
+			}, "mausritter-btn mausritter-btn-small")
+		);
+		header.appendChild(headerActions);
 		card.appendChild(header);
 
 		// Resources
 		const resSection = div("mausritter-faction-section");
 		resSection.appendChild(div("mausritter-faction-section-label", ["Resources"]));
 		const resList = el("ul", { class: "mausritter-faction-resource-list-readonly" });
-		for (const resource of faction.resources) {
+		for (const resource of data.resources) {
 			resList.appendChild(el("li", { class: "mausritter-faction-resource-item" }, [resource]));
 		}
 		resSection.appendChild(resList);
@@ -105,24 +87,22 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 		// Goals
 		const goalSection = div("mausritter-faction-section");
 		goalSection.appendChild(div("mausritter-faction-section-label", ["Goals"]));
-		faction.goals.forEach((goal) => {
+		data.goals.forEach((goal) => {
 			goalSection.appendChild(this.renderReadGoal(goal, data, updateState));
 		});
 		card.appendChild(goalSection);
 
-		return card;
+		container.appendChild(card);
 	}
 
 	private renderReadGoal(
 		goal: FactionGoal,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
+		data: Faction,
+		updateState: (data: Faction) => void
 	): HTMLElement {
 		const goalEl = div("mausritter-faction-goal");
-
 		goalEl.appendChild(div("mausritter-faction-goal-description", [goal.description]));
 
-		// Progress track - still clickable in read mode for convenience
 		const track = div("mausritter-faction-progress-track");
 		for (let i = 0; i < goal.total; i++) {
 			const circle = span(
@@ -146,62 +126,40 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 		return goalEl;
 	}
 
-	// ── Edit card ──
+	// ── Edit view ──
 
-	private renderEditCard(
-		faction: Faction,
-		index: number,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
-	): HTMLElement {
+	private renderEdit(
+		container: HTMLElement,
+		data: Faction,
+		updateState: (data: Faction) => void
+	): void {
 		const card = div("mausritter-faction-card mausritter-faction-card-edit");
 
-		// Header row with name input and actions
+		// Header
 		const header = div("mausritter-faction-header");
 		const nameInput = el("input", {
 			class: "mausritter-faction-name-input",
 			type: "text",
 		}) as HTMLInputElement;
-		nameInput.value = faction.name;
+		nameInput.value = data.name;
 		nameInput.addEventListener("change", () => {
-			faction.name = nameInput.value;
+			data.name = nameInput.value;
 			updateState(data);
 		});
 		header.appendChild(nameInput);
 		header.appendChild(
 			button("Done", () => {
-				this.editingIndex = null;
+				this.editing = false;
 				updateState(data);
 			}, "mausritter-btn mausritter-btn-small mausritter-btn-primary")
-		);
-		header.appendChild(
-			button("X", () => {
-				this.editingIndex = null;
-				data.factions.splice(index, 1);
-				updateState(data);
-			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-danger")
 		);
 		card.appendChild(header);
 
 		// Resources
-		card.appendChild(this.renderEditResources(faction, data, updateState));
-
-		// Goals
-		card.appendChild(this.renderEditGoals(faction, data, updateState));
-
-		return card;
-	}
-
-	private renderEditResources(
-		faction: Faction,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
-	): HTMLElement {
-		const section = div("mausritter-faction-section");
-		section.appendChild(div("mausritter-faction-section-label", ["Resources"]));
-
-		const list = div("mausritter-faction-resource-list");
-		faction.resources.forEach((resource, rIdx) => {
+		const resSection = div("mausritter-faction-section");
+		resSection.appendChild(div("mausritter-faction-section-label", ["Resources"]));
+		const resList = div("mausritter-faction-resource-list");
+		data.resources.forEach((resource, rIdx) => {
 			const row = div("mausritter-faction-resource-row");
 			const input = el("input", {
 				class: "mausritter-faction-resource-input",
@@ -209,62 +167,52 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 			}) as HTMLInputElement;
 			input.value = resource;
 			input.addEventListener("change", () => {
-				faction.resources[rIdx] = input.value;
+				data.resources[rIdx] = input.value;
 				updateState(data);
 			});
 			row.appendChild(input);
 			row.appendChild(
 				button("X", () => {
-					faction.resources.splice(rIdx, 1);
+					data.resources.splice(rIdx, 1);
 					updateState(data);
 				}, "mausritter-btn mausritter-btn-tiny mausritter-btn-danger")
 			);
-			list.appendChild(row);
+			resList.appendChild(row);
 		});
-		section.appendChild(list);
-
-		section.appendChild(
+		resSection.appendChild(resList);
+		resSection.appendChild(
 			button("+ Resource", () => {
-				faction.resources.push("New resource");
+				data.resources.push("New resource");
 				updateState(data);
 			}, "mausritter-btn mausritter-btn-small")
 		);
+		card.appendChild(resSection);
 
-		return section;
-	}
-
-	private renderEditGoals(
-		faction: Faction,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
-	): HTMLElement {
-		const section = div("mausritter-faction-section");
-		section.appendChild(div("mausritter-faction-section-label", ["Goals"]));
-
-		faction.goals.forEach((goal, gIdx) => {
-			section.appendChild(this.renderEditGoal(goal, gIdx, faction, data, updateState));
+		// Goals
+		const goalSection = div("mausritter-faction-section");
+		goalSection.appendChild(div("mausritter-faction-section-label", ["Goals"]));
+		data.goals.forEach((goal, gIdx) => {
+			goalSection.appendChild(this.renderEditGoal(goal, gIdx, data, updateState));
 		});
-
-		section.appendChild(
+		goalSection.appendChild(
 			button("+ Goal", () => {
-				faction.goals.push({ description: "New goal", progress: 0, total: 3 });
+				data.goals.push({ description: "New goal", progress: 0, total: 3 });
 				updateState(data);
 			}, "mausritter-btn mausritter-btn-small")
 		);
+		card.appendChild(goalSection);
 
-		return section;
+		container.appendChild(card);
 	}
 
 	private renderEditGoal(
 		goal: FactionGoal,
 		gIdx: number,
-		faction: Faction,
-		data: FactionTracker,
-		updateState: (data: FactionTracker) => void
+		data: Faction,
+		updateState: (data: Faction) => void
 	): HTMLElement {
 		const goalEl = div("mausritter-faction-goal");
 
-		// Goal description row
 		const descRow = div("mausritter-faction-goal-desc-row");
 		const descInput = el("input", {
 			class: "mausritter-faction-goal-input",
@@ -277,7 +225,6 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 		});
 		descRow.appendChild(descInput);
 
-		// Total marks control
 		const totalControl = div("mausritter-faction-goal-total");
 		totalControl.appendChild(
 			button("-", () => {
@@ -301,13 +248,12 @@ export class FactionRenderer extends BaseRenderer<FactionTracker> {
 
 		descRow.appendChild(
 			button("X", () => {
-				faction.goals.splice(gIdx, 1);
+				data.goals.splice(gIdx, 1);
 				updateState(data);
 			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-danger")
 		);
 		goalEl.appendChild(descRow);
 
-		// Progress track - clickable circles
 		const track = div("mausritter-faction-progress-track");
 		for (let i = 0; i < goal.total; i++) {
 			const circle = span(

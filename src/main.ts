@@ -10,6 +10,8 @@ import { CombatCardRenderer } from "./renderers/combat-card-renderer";
 import { HexMapRenderer } from "./renderers/hexmap-renderer";
 import { HexDetailRenderer } from "./renderers/hex-detail-renderer";
 import { FactionRenderer } from "./renderers/faction-renderer";
+import { AdventureSiteRenderer } from "./renderers/adventure-site-renderer";
+import { TreasureRenderer } from "./renderers/treasure-renderer";
 import { HomebrewRegistry } from "./engine/homebrew";
 import { RulebookView, RULEBOOK_VIEW_TYPE } from "./views/rulebook-view";
 
@@ -30,6 +32,8 @@ export default class MausritterPlugin extends Plugin {
 		const hexMapRenderer = new HexMapRenderer(this);
 		const hexDetailRenderer = new HexDetailRenderer(this, hexMapRenderer);
 		const factionRenderer = new FactionRenderer(this);
+		const adventureSiteRenderer = new AdventureSiteRenderer(this);
+		const treasureRenderer = new TreasureRenderer(this);
 
 		this.registerMarkdownCodeBlockProcessor(
 			"mausritter-character",
@@ -86,6 +90,16 @@ export default class MausritterPlugin extends Plugin {
 			(source, el, ctx) => factionRenderer.process(source, el, ctx)
 		);
 
+		this.registerMarkdownCodeBlockProcessor(
+			"mausritter-adventure-site",
+			(source, el, ctx) => adventureSiteRenderer.process(source, el, ctx)
+		);
+
+		this.registerMarkdownCodeBlockProcessor(
+			"mausritter-treasure",
+			(source, el, ctx) => treasureRenderer.process(source, el, ctx)
+		);
+
 		// Register commands to insert code blocks
 		const blocks: [string, string][] = [
 			["character", "mausritter-character"],
@@ -99,6 +113,8 @@ export default class MausritterPlugin extends Plugin {
 			["hexmap", "mausritter-hexmap"],
 			["hex reference", "mausritter-hex"],
 			["faction", "mausritter-faction"],
+			["adventure site", "mausritter-adventure-site"],
+			["treasure", "mausritter-treasure"],
 		];
 
 		for (const [label, blockType] of blocks) {

@@ -1,4 +1,4 @@
-import { Faction, FactionGoal, FactionTracker } from "../types/generator";
+import { Faction, FactionGoal } from "../types/generator";
 import { factionNames, factionResources, factionGoalTemplates } from "../data/factions";
 import { roll } from "./dice";
 
@@ -25,13 +25,4 @@ export function generateFaction(): Faction {
 	}));
 
 	return { name, resources, goals };
-}
-
-export function generateFactionSet(count?: number): FactionTracker {
-	const n = count ?? roll(2) + 2; // 3-4
-	const factions: Faction[] = [];
-	for (let i = 0; i < n; i++) {
-		factions.push(generateFaction());
-	}
-	return { factions };
 }

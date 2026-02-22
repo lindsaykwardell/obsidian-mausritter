@@ -1,19 +1,19 @@
 /** Coat colours: roll d6 */
 export const coatColours: string[] = [
+	"Chocolate",
+	"Black",
 	"White",
 	"Tan",
 	"Grey",
-	"Brown",
-	"Black",
-	"Golden",
+	"Blue",
 ];
 
 /** Coat patterns: roll d6 */
 export const coatPatterns: string[] = [
 	"Solid",
-	"Piebald",
-	"Patched",
+	"Brindle",
+	"Patchy",
+	"Banded",
 	"Marbled",
 	"Flecked",
-	"Striped",
 ];

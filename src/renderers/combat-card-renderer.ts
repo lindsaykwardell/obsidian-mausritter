@@ -5,7 +5,7 @@ import { rollSave, StatName } from "../engine/saves";
 import { usageCheck } from "../engine/dice";
 import { buildCellMap, migrateOldInventory, PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS } from "../engine/inventory";
 import { div, button, span, el } from "../utils/dom-helpers";
-import { renderSpellPanels } from "./spell-panel";
+import { renderItemDetailPanels } from "./item-detail-panel";
 
 export class CombatCardRenderer extends BaseRenderer<Character> {
 	protected blockType = "mausritter-combat-card";
@@ -85,13 +85,14 @@ export class CombatCardRenderer extends BaseRenderer<Character> {
 		this.renderGridItems(equippedRow, data, "Body", data.bodyGrid, BODY_ROWS, BODY_COLS, updateState);
 		container.appendChild(equippedRow);
 
-		// Spell panels (equipped spells only — paw and body)
-		const spellPanel = renderSpellPanels(
+		// Item detail panels (spells, swords, etc. — equipped in paw and body)
+		const detailPanel = renderItemDetailPanels(
 			[data.pawGrid, data.bodyGrid],
 			data,
-			updateState
+			updateState,
+			{ compact: true }
 		);
-		if (spellPanel) container.appendChild(spellPanel);
+		if (detailPanel) container.appendChild(detailPanel);
 
 		// Conditions from pack
 		const conditions = data.packGrid.filter(g => g.item.type === "condition");
