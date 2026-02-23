@@ -12,6 +12,8 @@ import { HexDetailRenderer } from "./renderers/hex-detail-renderer";
 import { FactionRenderer } from "./renderers/faction-renderer";
 import { AdventureSiteRenderer } from "./renderers/adventure-site-renderer";
 import { TreasureRenderer } from "./renderers/treasure-renderer";
+import { HirelingRenderer } from "./renderers/hireling-renderer";
+import { WarbandRenderer } from "./renderers/warband-renderer";
 import { HomebrewRegistry } from "./engine/homebrew";
 import { RulebookView, RULEBOOK_VIEW_TYPE } from "./views/rulebook-view";
 
@@ -34,6 +36,8 @@ export default class MausritterPlugin extends Plugin {
 		const factionRenderer = new FactionRenderer(this);
 		const adventureSiteRenderer = new AdventureSiteRenderer(this);
 		const treasureRenderer = new TreasureRenderer(this);
+		const hirelingRenderer = new HirelingRenderer(this);
+		const warbandRenderer = new WarbandRenderer(this);
 
 		this.registerMarkdownCodeBlockProcessor(
 			"mausritter-character",
@@ -100,6 +104,16 @@ export default class MausritterPlugin extends Plugin {
 			(source, el, ctx) => treasureRenderer.process(source, el, ctx)
 		);
 
+		this.registerMarkdownCodeBlockProcessor(
+			"mausritter-hireling",
+			(source, el, ctx) => hirelingRenderer.process(source, el, ctx)
+		);
+
+		this.registerMarkdownCodeBlockProcessor(
+			"mausritter-warband",
+			(source, el, ctx) => warbandRenderer.process(source, el, ctx)
+		);
+
 		// Register commands to insert code blocks
 		const blocks: [string, string][] = [
 			["character", "mausritter-character"],
@@ -115,6 +129,8 @@ export default class MausritterPlugin extends Plugin {
 			["faction", "mausritter-faction"],
 			["adventure site", "mausritter-adventure-site"],
 			["treasure", "mausritter-treasure"],
+			["hireling", "mausritter-hireling"],
+			["warband", "mausritter-warband"],
 		];
 
 		for (const [label, blockType] of blocks) {

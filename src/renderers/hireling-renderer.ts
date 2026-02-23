@@ -1,15 +1,16 @@
 import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
-import { Character, Item, GridItem } from "../types/character";
-import { generateCharacter } from "../engine/character-creation";
+import { HirelingData } from "../types/hireling";
+import { Item, GridItem } from "../types/character";
+import { generateHireling, rollMorale } from "../engine/hireling";
+import { hirelingTemplates } from "../data/hirelings";
 import { rollSave, StatName } from "../engine/saves";
-import { shortRest, longRest, fullRest } from "../engine/rest";
-import { levelUp, canLevelUp } from "../engine/advancement";
+import { canLevelUp, levelUp } from "../engine/advancement";
 import { usageCheck } from "../engine/dice";
 import {
-	addConditionToInventory, addItemToPackGrid, removeFromGrid, rotateOnGrid,
-	canPlaceOnGrid, buildCellMap, migrateOldInventory, placeOnGrid,
-	PACK_ROWS, PACK_COLS, PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
+	removeFromGrid, rotateOnGrid,
+	canPlaceOnGrid, buildCellMap, placeOnGrid,
+	PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
 } from "../engine/inventory";
 import { conditions } from "../data/conditions";
 import { weapons, armour, ammunition, gear } from "../data/items";
@@ -17,6 +18,9 @@ import { spellTemplates } from "../data/spells";
 import { div, button, span, el } from "../utils/dom-helpers";
 import { renderItemDetailPanels } from "./item-detail-panel";
 import { findAllEntitySheets, giveItemToEntity, EntitySheetRef } from "../engine/vault-scanner";
+
+export const HIRELING_PACK_ROWS = 1;
+export const HIRELING_PACK_COLS = 2;
 
 type GridName = "paw" | "body" | "pack";
 
@@ -31,11 +35,11 @@ type DragSource = {
 
 type DragData = DragSource | null;
 
-function getCharGrid(character: Character, gridName: GridName): GridItem[] {
+function getHirelingGrid(hireling: HirelingData, gridName: GridName): GridItem[] {
 	switch (gridName) {
-		case "paw": return character.pawGrid;
-		case "body": return character.bodyGrid;
-		case "pack": return character.packGrid;
+		case "paw": return hireling.pawGrid;
+		case "body": return hireling.bodyGrid;
+		case "pack": return hireling.packGrid;
 	}
 }
 
@@ -43,12 +47,12 @@ function getGridDims(gridName: GridName): [number, number] {
 	switch (gridName) {
 		case "paw": return [PAW_ROWS, PAW_COLS];
 		case "body": return [BODY_ROWS, BODY_COLS];
-		case "pack": return [PACK_ROWS, PACK_COLS];
+		case "pack": return [HIRELING_PACK_ROWS, HIRELING_PACK_COLS];
 	}
 }
 
-export class CharacterRenderer extends BaseRenderer<Character> {
-	protected blockType = "mausritter-character";
+export class HirelingRenderer extends BaseRenderer<HirelingData> {
+	protected blockType = "mausritter-hireling";
 	private addItemOpen = false;
 	private logOpen = false;
 
@@ -58,126 +62,138 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 	protected render(
 		container: HTMLElement,
-		data: Character | null,
-		updateState: (data: Character) => void
+		data: HirelingData | null,
+		updateState: (data: HirelingData) => void
 	): void {
-		container.addClass("mausritter-character");
+		container.addClass("mausritter-hireling");
 
 		if (!data) {
 			this.renderEmpty(container, updateState);
 			return;
 		}
 
-		// Migrate old inventory format
-		migrateOldInventory(data);
 		if (!data.ground) data.ground = [];
+		if (!data.pawGrid) data.pawGrid = [];
+		if (!data.bodyGrid) data.bodyGrid = [];
+		if (!data.packGrid) data.packGrid = [];
+		if (!data.log) data.log = [];
 
-		// Auto-assign ID to existing characters that lack one
+		// Auto-assign ID to existing hirelings that lack one
 		if (!data.id) {
 			data.id = crypto.randomUUID();
 			updateState(data);
 		}
 
-		this.renderCharacter(container, data, updateState);
+		this.renderHireling(container, data, updateState);
 	}
 
-	private renderEmpty(container: HTMLElement, updateState: (data: Character) => void): void {
+	private renderEmpty(container: HTMLElement, updateState: (data: HirelingData) => void): void {
 		const emptyDiv = div("mausritter-character-empty", [
-			"No character data. Generate a new mouse adventurer!",
+			"No hireling data. Recruit a hireling!",
 		]);
 		container.appendChild(emptyDiv);
-		container.appendChild(
-			button("Generate New Character", () => {
-				const character = generateCharacter();
-				updateState(character);
+
+		const row = div("mausritter-add-item-row");
+
+		const typeSelect = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
+		for (const tmpl of hirelingTemplates) {
+			typeSelect.appendChild(
+				el("option", { value: tmpl.type }, [`${tmpl.type} (${tmpl.wagesPerDay}p/day)`])
+			);
+		}
+		row.appendChild(typeSelect);
+
+		row.appendChild(
+			button("Recruit Hireling", () => {
+				const hireling = generateHireling(typeSelect.value);
+				updateState(hireling);
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+
+		container.appendChild(row);
 	}
 
-	private renderCharacter(
+	private renderHireling(
 		container: HTMLElement,
-		character: Character,
-		updateState: (data: Character) => void
+		hireling: HirelingData,
+		updateState: (data: HirelingData) => void
 	): void {
-		// Header row: name + rest buttons
+		// Header row: name + type + wages
 		const header = div("mausritter-character-header");
 
 		const headerTop = div("mausritter-character-header-top");
 		const nameInput = el("input", { class: "mausritter-character-name", type: "text" }) as HTMLInputElement;
-		nameInput.value = character.name;
+		nameInput.value = hireling.name;
+		nameInput.placeholder = "Hireling name...";
 		nameInput.addEventListener("change", () => {
-			character.name = nameInput.value;
-			updateState(character);
+			hireling.name = nameInput.value;
+			updateState(hireling);
 		});
 		headerTop.appendChild(nameInput);
 
-		// Rest buttons inline with name
-		const restRow = div("mausritter-rest-row");
-		restRow.appendChild(
-			button("Short Rest", () => {
-				const log = shortRest(character);
-				character.log.push(...log);
-				updateState(character);
-			}, "mausritter-btn mausritter-btn-tiny")
-		);
-		restRow.appendChild(
-			button("Long Rest", () => {
-				const log = longRest(character, "str");
-				character.log.push(...log);
-				updateState(character);
-			}, "mausritter-btn mausritter-btn-tiny")
-		);
-		restRow.appendChild(
-			button("Full Rest", () => {
-				const log = fullRest(character);
-				character.log.push(...log);
-				updateState(character);
+		// Morale + Level Up buttons
+		const actionRow = div("mausritter-rest-row");
+
+		actionRow.appendChild(
+			button("Morale", () => {
+				const result = rollMorale(hireling);
+				hireling.fled = result.fled;
+				hireling.log.push(
+					`Morale check: rolled ${result.roll} vs WIL ${result.wilValue} — ${result.fled ? "Fled!" : "Holds!"}`
+				);
+				updateState(hireling);
 			}, "mausritter-btn mausritter-btn-tiny")
 		);
 
-		// Level up button (next to rest if available)
-		if (canLevelUp(character)) {
-			restRow.appendChild(
+		if (canLevelUp(hireling as any)) {
+			actionRow.appendChild(
 				button("Level Up!", () => {
-					const result = levelUp(character);
+					const result = levelUp(hireling as any);
 					if (result) {
-						character.log.push(...result.log);
-						updateState(character);
+						hireling.log.push(...result.log);
+						updateState(hireling);
 					}
 				}, "mausritter-btn mausritter-btn-primary mausritter-btn-tiny")
 			);
 		}
 
-		headerTop.appendChild(restRow);
+		headerTop.appendChild(actionRow);
 		header.appendChild(headerTop);
 
-		header.appendChild(span("mausritter-character-info",
-			`Level ${character.level} ${character.background} | ${character.birthsign} | ${character.coat} | ${character.physicalDetail}`
-		));
+		// Info line
+		const infoText = `Level ${hireling.level} ${hireling.type} | ${hireling.wagesPerDay}p/day`;
+		const infoSpan = span("mausritter-character-info", infoText);
+		header.appendChild(infoSpan);
+
+		// Fled badge
+		if (hireling.fled) {
+			header.appendChild(span("mausritter-hireling-fled-badge", "FLED"));
+		}
+
 		container.appendChild(header);
 
-		// Stats row — each stat box includes its save button
+		// Stats row
 		const statsRow = div("mausritter-stats-row");
 		for (const statName of ["str", "dex", "wil"] as StatName[]) {
-			statsRow.appendChild(this.renderStat(statName, character, updateState));
+			statsRow.appendChild(this.renderStat(statName, hireling, updateState));
 		}
 		container.appendChild(statsRow);
 
-		// HP, Pips, XP row — HP and Pips as editable inputs
+		// HP, Wages, XP row
 		const resourceRow = div("mausritter-resource-row");
-		resourceRow.appendChild(this.renderHp(character, updateState));
-		resourceRow.appendChild(this.renderPips(character, updateState));
-		resourceRow.appendChild(this.renderXp(character, updateState));
+		resourceRow.appendChild(this.renderHp(hireling, updateState));
+		resourceRow.appendChild(this.renderWages(hireling, updateState));
+		resourceRow.appendChild(this.renderXp(hireling, updateState));
 		container.appendChild(resourceRow);
 
 		// Inventory
-		container.appendChild(this.renderInventory(character, updateState));
+		container.appendChild(this.renderInventory(hireling, updateState));
 
-		// Item detail panels (spells, magic swords, trinkets, etc.)
+		// Item detail panels
 		const itemDetailPanel = renderItemDetailPanels(
-			[character.pawGrid, character.bodyGrid, character.packGrid],
-			character,
-			updateState
+			[hireling.pawGrid, hireling.bodyGrid, hireling.packGrid],
+			hireling as any,
+			updateState as any
 		);
 		if (itemDetailPanel) container.appendChild(itemDetailPanel);
 
@@ -190,7 +206,7 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		addItemSummary.className = "mausritter-collapsible-summary";
 		addItemSummary.textContent = "Add Item / Condition";
 		addItemDetails.appendChild(addItemSummary);
-		addItemDetails.appendChild(this.renderAddItem(character, updateState));
+		addItemDetails.appendChild(this.renderAddItem(hireling, updateState));
 		container.appendChild(addItemDetails);
 
 		// Action log — collapsible
@@ -202,62 +218,61 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		logSummary.className = "mausritter-collapsible-summary";
 		logSummary.textContent = "Action Log";
 		logDetails.appendChild(logSummary);
-		logDetails.appendChild(this.renderLog(character));
+		logDetails.appendChild(this.renderLog(hireling));
 		container.appendChild(logDetails);
 	}
 
 	// ---- Stat / Resource renderers ----
 
-	private renderStat(statName: StatName, character: Character, updateState: (data: Character) => void): HTMLElement {
-		const stat = character[statName];
+	private renderStat(statName: StatName, hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+		const stat = hireling[statName];
 		const box = div("mausritter-stat-box");
 		box.appendChild(div("mausritter-stat-label", [statName.toUpperCase()]));
 		const values = div("mausritter-stat-values");
 
 		const currentInput = el("input", { class: "mausritter-stat-input mausritter-stat-current", type: "number" }) as HTMLInputElement;
 		currentInput.value = String(stat.current);
-		currentInput.addEventListener("change", () => { stat.current = parseInt(currentInput.value) || 0; updateState(character); });
+		currentInput.addEventListener("change", () => { stat.current = parseInt(currentInput.value) || 0; updateState(hireling); });
 
 		const maxInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
 		maxInput.value = String(stat.max);
-		maxInput.addEventListener("change", () => { stat.max = parseInt(maxInput.value) || 0; updateState(character); });
+		maxInput.addEventListener("change", () => { stat.max = parseInt(maxInput.value) || 0; updateState(hireling); });
 
 		values.appendChild(currentInput);
 		values.appendChild(span("mausritter-stat-slash", "/"));
 		values.appendChild(maxInput);
 		box.appendChild(values);
 
-		// Save button for this stat
 		box.appendChild(
 			button("Save", () => {
-				const result = rollSave(character, statName);
-				character.log.push(
+				const result = rollSave(hireling as any, statName);
+				hireling.log.push(
 					`${statName.toUpperCase()} save: rolled ${result.roll} vs ${result.statValue} — ${result.success ? "Success!" : "Failure!"}`
 				);
-				updateState(character);
+				updateState(hireling);
 			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-save")
 		);
 
 		return box;
 	}
 
-	private renderHp(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderHp(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["HP"]));
 		const values = div("mausritter-stat-values");
 
 		const currentInput = el("input", { class: "mausritter-stat-input mausritter-stat-current", type: "number" }) as HTMLInputElement;
-		currentInput.value = String(character.hp.current);
+		currentInput.value = String(hireling.hp.current);
 		currentInput.addEventListener("change", () => {
-			character.hp.current = Math.max(0, parseInt(currentInput.value) || 0);
-			updateState(character);
+			hireling.hp.current = Math.max(0, parseInt(currentInput.value) || 0);
+			updateState(hireling);
 		});
 
 		const maxInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
-		maxInput.value = String(character.hp.max);
+		maxInput.value = String(hireling.hp.max);
 		maxInput.addEventListener("change", () => {
-			character.hp.max = Math.max(1, parseInt(maxInput.value) || 1);
-			updateState(character);
+			hireling.hp.max = Math.max(1, parseInt(maxInput.value) || 1);
+			updateState(hireling);
 		});
 
 		values.appendChild(currentInput);
@@ -267,62 +282,57 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		return box;
 	}
 
-	private renderPips(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderWages(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
-		box.appendChild(div("mausritter-resource-label", ["Pips"]));
-
-		const pipsInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
-		pipsInput.value = String(character.pips);
-		pipsInput.addEventListener("change", () => {
-			character.pips = Math.max(0, parseInt(pipsInput.value) || 0);
-			updateState(character);
+		box.appendChild(div("mausritter-resource-label", ["Wages"]));
+		const wagesInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
+		wagesInput.value = String(hireling.wagesPerDay);
+		wagesInput.addEventListener("change", () => {
+			hireling.wagesPerDay = Math.max(0, parseInt(wagesInput.value) || 0);
+			updateState(hireling);
 		});
-		box.appendChild(pipsInput);
+		box.appendChild(wagesInput);
+		box.appendChild(span("mausritter-resource-unit", "p/day"));
 		return box;
 	}
 
-	private renderXp(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderXp(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["XP"]));
 		const xpInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
-		xpInput.value = String(character.xp);
-		xpInput.addEventListener("change", () => { character.xp = parseInt(xpInput.value) || 0; updateState(character); });
+		xpInput.value = String(hireling.xp);
+		xpInput.addEventListener("change", () => { hireling.xp = parseInt(xpInput.value) || 0; updateState(hireling); });
 		box.appendChild(xpInput);
 		return box;
 	}
 
 	// ---- Inventory ----
 
-	private renderInventory(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderInventory(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const section = div("mausritter-inventory");
 		section.appendChild(div("mausritter-subtitle", ["Inventory"]));
 
-		// Paw grid (1x2)
 		section.appendChild(div("mausritter-slot-label", ["Paws"]));
-		section.appendChild(this.renderGrid(character, "paw", updateState));
+		section.appendChild(this.renderGrid(hireling, "paw", updateState));
 
-		// Body grid (1x2)
 		section.appendChild(div("mausritter-slot-label", ["Body"]));
-		section.appendChild(this.renderGrid(character, "body", updateState));
+		section.appendChild(this.renderGrid(hireling, "body", updateState));
 
-		// Pack grid (2x3)
 		section.appendChild(div("mausritter-slot-label mausritter-pack-label", ["Pack"]));
-		section.appendChild(this.renderGrid(character, "pack", updateState));
+		section.appendChild(this.renderGrid(hireling, "pack", updateState));
 
-		// Ground (staging area)
-		section.appendChild(this.renderGround(character, updateState));
+		section.appendChild(this.renderGround(hireling, updateState));
 
 		return section;
 	}
 
-	/** Generic grid renderer for paw (1x2), body (1x2), and pack (2x3) */
-	private renderGrid(character: Character, gridName: GridName, updateState: (data: Character) => void): HTMLElement {
-		const grid = getCharGrid(character, gridName);
+	private renderGrid(hireling: HirelingData, gridName: GridName, updateState: (data: HirelingData) => void): HTMLElement {
+		const grid = getHirelingGrid(hireling, gridName);
 		const [rows, cols] = getGridDims(gridName);
 		const cellMap = buildCellMap(grid, rows, cols);
 		const renderedItems = new Set<number>();
 
-		const gridEl = div(`mausritter-pack-grid mausritter-grid-${gridName}`);
+		const gridEl = div(`mausritter-pack-grid mausritter-grid-${gridName === "pack" ? "hireling-pack" : gridName}`);
 
 		for (let r = 0; r < rows; r++) {
 			for (let c = 0; c < cols; c++) {
@@ -336,7 +346,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 						cellEl.style.gridRow = `${r + 1} / span ${entry.item.height}`;
 						cellEl.style.gridColumn = `${c + 1} / span ${entry.item.width}`;
 
-						// Make draggable
 						cellEl.setAttribute("draggable", "true");
 						cellEl.addEventListener("dragstart", (e) => {
 							e.dataTransfer?.setData("text/plain", `grid:${gridName}:${itemIndex}`);
@@ -344,54 +353,50 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 						cellEl.appendChild(this.renderItemCard(entry.item, {
 							onRemove: () => {
-								character.ground.push(entry.item);
+								hireling.ground.push(entry.item);
 								removeFromGrid(grid, itemIndex);
-								updateState(character);
+								updateState(hireling);
 							},
 							onDelete: () => {
-								character.log.push(`Deleted ${entry.item.name}.`);
+								hireling.log.push(`Deleted ${entry.item.name}.`);
 								removeFromGrid(grid, itemIndex);
-								updateState(character);
+								updateState(hireling);
 							},
 							onRotate: () => {
 								rotateOnGrid(grid, itemIndex, rows, cols);
-								updateState(character);
+								updateState(hireling);
 							},
 							showRotate: entry.item.width !== entry.item.height,
-							onUsageCheck: (item) => this.doUsageCheck(character, item, updateState),
 							onGiveTo: (anchor) => this.showGiveDropdown(
 								anchor, entry.item,
 								() => removeFromGrid(grid, itemIndex),
-								character, updateState
+								hireling, updateState
 							),
 						}));
 
-						// Accept drops onto filled cells (swap)
 						this.makeDropTarget(cellEl, (source) => {
 							if (source.type === "grid" && source.gridName === gridName && source.index === itemIndex) return;
 
-							const incomingItem = this.getDragItem(character, source);
+							const incomingItem = this.getDragItem(hireling, source);
 							if (!incomingItem) return;
 
 							const displacedItem = { ...entry.item };
 							removeFromGrid(grid, itemIndex);
-							this.removeDragSource(character, source);
+							this.removeDragSource(hireling, source);
 
-							// Place incoming
 							if (canPlaceOnGrid(grid, r, c, incomingItem, rows, cols)) {
 								grid.push({ item: { ...incomingItem }, row: r, col: c });
 							} else {
-								character.ground.push({ ...incomingItem });
+								hireling.ground.push({ ...incomingItem });
 							}
 
-							// Place displaced back
 							const [dRows, dCols] = source.type === "grid" ? getGridDims(source.gridName) : [rows, cols];
-							const dGrid = source.type === "grid" ? getCharGrid(character, source.gridName) : grid;
+							const dGrid = source.type === "grid" ? getHirelingGrid(hireling, source.gridName) : grid;
 							if (!placeOnGrid(dGrid, displacedItem, dRows, dCols)) {
-								character.ground.push(displacedItem);
+								hireling.ground.push(displacedItem);
 							}
 
-							updateState(character);
+							updateState(hireling);
 						});
 
 						gridEl.appendChild(cellEl);
@@ -402,24 +407,23 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 					cellEl.style.gridColumn = `${c + 1}`;
 
 					this.makeDropTarget(cellEl, (source) => {
-						const incomingItem = this.getDragItem(character, source);
+						const incomingItem = this.getDragItem(hireling, source);
 						if (!incomingItem) return;
 
-						this.removeDragSource(character, source);
+						this.removeDragSource(hireling, source);
 
 						if (canPlaceOnGrid(grid, r, c, incomingItem, rows, cols)) {
 							grid.push({ item: { ...incomingItem }, row: r, col: c });
-							updateState(character);
+							updateState(hireling);
 						} else {
-							// Try rotated
 							const rotated = { ...incomingItem, width: incomingItem.height, height: incomingItem.width };
 							if (canPlaceOnGrid(grid, r, c, rotated, rows, cols)) {
 								grid.push({ item: rotated, row: r, col: c });
-								updateState(character);
+								updateState(hireling);
 							} else {
-								character.ground.push({ ...incomingItem });
-								character.log.push(`${incomingItem.name} doesn't fit there — moved to ground.`);
-								updateState(character);
+								hireling.ground.push({ ...incomingItem });
+								hireling.log.push(`${incomingItem.name} doesn't fit there — moved to ground.`);
+								updateState(hireling);
 							}
 						}
 					});
@@ -432,18 +436,17 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		return gridEl;
 	}
 
-	/** Render the ground staging area */
-	private renderGround(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderGround(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const section = div("mausritter-ground");
 		section.appendChild(div("mausritter-slot-label", ["Ground"]));
 
 		const groundItems = div("mausritter-ground-items");
 
-		if (character.ground.length === 0) {
+		if (hireling.ground.length === 0) {
 			groundItems.appendChild(span("mausritter-ground-hint", "Drag items here to reorganize"));
 		}
 
-		character.ground.forEach((item, index) => {
+		hireling.ground.forEach((item, index) => {
 			const wrapper = div("mausritter-ground-item");
 			wrapper.setAttribute("draggable", "true");
 			wrapper.setAttribute("data-item-w", String(item.width));
@@ -454,41 +457,39 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 			wrapper.appendChild(this.renderItemCard(item, {
 				onRemove: () => {
-					character.ground.splice(index, 1);
-					character.log.push(`Discarded ${item.name}.`);
-					updateState(character);
+					hireling.ground.splice(index, 1);
+					hireling.log.push(`Discarded ${item.name}.`);
+					updateState(hireling);
 				},
 				onDelete: () => {
-					character.ground.splice(index, 1);
-					character.log.push(`Deleted ${item.name}.`);
-					updateState(character);
+					hireling.ground.splice(index, 1);
+					hireling.log.push(`Deleted ${item.name}.`);
+					updateState(hireling);
 				},
 				onRotate: item.width !== item.height ? () => {
 					const temp = item.width;
 					item.width = item.height;
 					item.height = temp;
-					updateState(character);
+					updateState(hireling);
 				} : undefined,
 				showRotate: item.width !== item.height,
-				onUsageCheck: (it) => this.doUsageCheck(character, it, updateState),
 				onGiveTo: (anchor) => this.showGiveDropdown(
 					anchor, item,
-					() => { character.ground.splice(index, 1); },
-					character, updateState
+					() => { hireling.ground.splice(index, 1); },
+					hireling, updateState
 				),
 			}));
 
 			groundItems.appendChild(wrapper);
 		});
 
-		// Accept drops from any grid onto ground
 		this.makeDropTarget(groundItems, (source) => {
 			if (source.type === "ground") return;
-			const incomingItem = this.getDragItem(character, source);
+			const incomingItem = this.getDragItem(hireling, source);
 			if (!incomingItem) return;
-			this.removeDragSource(character, source);
-			character.ground.push({ ...incomingItem });
-			updateState(character);
+			this.removeDragSource(hireling, source);
+			hireling.ground.push({ ...incomingItem });
+			updateState(hireling);
 		});
 
 		section.appendChild(groundItems);
@@ -504,7 +505,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 			return isNaN(index) ? null : { type: "ground", index };
 		}
 		if (data.startsWith("grid:")) {
-			// format: grid:<gridName>:<index>
 			const parts = data.split(":");
 			if (parts.length !== 3) return null;
 			const gridName = parts[1] as GridName;
@@ -515,19 +515,19 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		return null;
 	}
 
-	private getDragItem(character: Character, source: DragData): Item | null {
+	private getDragItem(hireling: HirelingData, source: DragData): Item | null {
 		if (!source) return null;
-		if (source.type === "ground") return character.ground[source.index] ?? null;
-		const grid = getCharGrid(character, source.gridName);
+		if (source.type === "ground") return hireling.ground[source.index] ?? null;
+		const grid = getHirelingGrid(hireling, source.gridName);
 		return grid[source.index]?.item ?? null;
 	}
 
-	private removeDragSource(character: Character, source: DragData): void {
+	private removeDragSource(hireling: HirelingData, source: DragData): void {
 		if (!source) return;
 		if (source.type === "ground") {
-			character.ground.splice(source.index, 1);
+			hireling.ground.splice(source.index, 1);
 		} else {
-			const grid = getCharGrid(character, source.gridName);
+			const grid = getHirelingGrid(hireling, source.gridName);
 			removeFromGrid(grid, source.index);
 		}
 	}
@@ -560,7 +560,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 			onDelete?: () => void;
 			onRotate?: () => void;
 			showRotate?: boolean;
-			onUsageCheck?: (item: Item) => void;
 			onGiveTo?: (anchor: HTMLElement) => void;
 		}
 	): HTMLElement {
@@ -569,7 +568,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 			`mausritter-item ${isCondition ? "mausritter-item-condition" : `mausritter-item-${item.type}`}`
 		);
 
-		// Top-right info (damage dice, defence, size)
 		const topRight: string[] = [];
 		if (item.damage) topRight.push(item.damage);
 		if (item.defence) topRight.push(`+${item.defence}`);
@@ -592,7 +590,6 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 				});
 				usageEl.appendChild(dot);
 			}
-			// Check button removed — usage tracking is in the Item Details panel
 			itemEl.appendChild(usageEl);
 		}
 
@@ -629,15 +626,14 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		anchor: HTMLElement,
 		item: Item,
 		removeItem: () => void,
-		character: Character,
-		updateState: (data: Character) => void
+		hireling: HirelingData,
+		updateState: (data: HirelingData) => void
 	): void {
-		// Remove any existing dropdown
 		const existing = document.querySelector(".mausritter-give-dropdown");
 		if (existing) existing.remove();
 
 		findAllEntitySheets(this.plugin).then(sheets => {
-			const filtered = sheets.filter(s => !character.id || s.id !== character.id);
+			const filtered = sheets.filter(s => !hireling.id || s.id !== hireling.id);
 			if (filtered.length === 0) {
 				anchor.textContent = "!";
 				setTimeout(() => { anchor.textContent = "\u2192"; }, 1500);
@@ -655,8 +651,8 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 					const success = await giveItemToEntity(this.plugin, sheet, { ...item });
 					if (success) {
 						removeItem();
-						character.log.push(`Gave ${item.name} to ${sheet.name}.`);
-						updateState(character);
+						hireling.log.push(`Gave ${item.name} to ${sheet.name}.`);
+						updateState(hireling);
 					}
 					dropdown.remove();
 				}, "mausritter-give-dropdown-option");
@@ -675,27 +671,11 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		});
 	}
 
-	private doUsageCheck(character: Character, item: Item, updateState: (data: Character) => void): void {
-		if (!item.usage) return;
-		const result = usageCheck();
-		if (result.depleted) {
-			item.usage.used = Math.min(item.usage.total, item.usage.used + 1);
-			character.log.push(`Usage check on ${item.name}: rolled ${result.roll} — mark dot!`);
-			if (item.usage.used >= item.usage.total) {
-				character.log.push(`${item.name} is depleted!`);
-			}
-		} else {
-			character.log.push(`Usage check on ${item.name}: rolled ${result.roll} — safe.`);
-		}
-		updateState(character);
-	}
-
 	// ---- Add Item ----
 
-	private renderAddItem(character: Character, updateState: (data: Character) => void): HTMLElement {
+	private renderAddItem(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
 		const section = div("mausritter-add-item");
 
-		// Standard item picker
 		const row = div("mausritter-add-item-row");
 
 		const categorySelect = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
@@ -748,14 +728,14 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 				const item: Item = { ...template, equipped: false };
 				if (template.usage) item.usage = { ...template.usage };
 
-				const added = addItemToPackGrid(character, item);
+				const added = placeOnGrid(hireling.packGrid, item, HIRELING_PACK_ROWS, HIRELING_PACK_COLS);
 				if (added) {
-					character.log.push(`Added ${item.name} to pack.`);
+					hireling.log.push(`Added ${item.name} to pack.`);
 				} else {
-					character.ground.push(item);
-					character.log.push(`No room in pack — ${item.name} placed on ground.`);
+					hireling.ground.push(item);
+					hireling.log.push(`No room in pack — ${item.name} placed on ground.`);
 				}
-				updateState(character);
+				updateState(hireling);
 			}, "mausritter-btn mausritter-btn-primary")
 		);
 
@@ -779,15 +759,15 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 				if (!name) return;
 				const [w, h] = sizeSelect.value.split(",").map(Number);
 				const item: Item = { name, type: "gear", slots: w * h, width: w, height: h };
-				const added = addItemToPackGrid(character, item);
+				const added = placeOnGrid(hireling.packGrid, item, HIRELING_PACK_ROWS, HIRELING_PACK_COLS);
 				if (added) {
-					character.log.push(`Added ${name} to pack.`);
+					hireling.log.push(`Added ${name} to pack.`);
 				} else {
-					character.ground.push(item);
-					character.log.push(`No room — ${name} placed on ground.`);
+					hireling.ground.push(item);
+					hireling.log.push(`No room — ${name} placed on ground.`);
 				}
 				customInput.value = "";
-				updateState(character);
+				updateState(hireling);
 			}, "mausritter-btn")
 		);
 
@@ -799,13 +779,20 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		for (const cond of conditions) {
 			condRow.appendChild(
 				button(cond.name, () => {
-					const added = addConditionToInventory(character, cond.name);
+					const conditionItem: Item = {
+						name: cond.name,
+						type: "condition",
+						slots: 1,
+						width: 1,
+						height: 1,
+					};
+					const added = placeOnGrid(hireling.packGrid, conditionItem, HIRELING_PACK_ROWS, HIRELING_PACK_COLS);
 					if (added) {
-						character.log.push(`Gained condition: ${cond.name} — ${cond.effect}`);
+						hireling.log.push(`Gained condition: ${cond.name} — ${cond.effect}`);
 					} else {
-						character.log.push(`No inventory space for condition: ${cond.name}`);
+						hireling.log.push(`No inventory space for condition: ${cond.name}`);
 					}
-					updateState(character);
+					updateState(hireling);
 				}, "mausritter-btn mausritter-btn-tiny mausritter-btn-condition")
 			);
 		}
@@ -816,9 +803,9 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 
 	// ---- Log ----
 
-	private renderLog(character: Character): HTMLElement {
+	private renderLog(hireling: HirelingData): HTMLElement {
 		const logSection = div("mausritter-log");
-		const entries = [...character.log].reverse().slice(0, 20);
+		const entries = [...hireling.log].reverse().slice(0, 20);
 		for (const entry of entries) {
 			logSection.appendChild(div("mausritter-log-entry", [entry]));
 		}

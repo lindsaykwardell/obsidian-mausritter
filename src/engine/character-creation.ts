@@ -121,6 +121,7 @@ export function generateCharacter(): Character {
 	}
 
 	return {
+		id: crypto.randomUUID(),
 		name,
 		level: 1,
 		xp: 0,

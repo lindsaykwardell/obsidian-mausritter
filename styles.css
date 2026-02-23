@@ -2654,6 +2654,39 @@
 	background: var(--background-modifier-hover);
 }
 
+/* Give item dropdown */
+.mausritter-give-dropdown {
+	position: absolute;
+	z-index: 10;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+	display: flex;
+	flex-direction: column;
+	min-width: 160px;
+	overflow: hidden;
+}
+
+.mausritter-give-dropdown-option {
+	padding: 6px 12px;
+	border: none;
+	background: none;
+	text-align: left;
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--text-normal);
+	transition: background 0.1s;
+}
+
+.mausritter-give-dropdown-option:hover {
+	background: var(--background-modifier-hover);
+}
+
+.mausritter-btn-give {
+	font-size: 0.75em;
+}
+
 .mausritter-treasure-input {
 	width: 100%;
 	padding: 4px 8px;
@@ -2670,4 +2703,72 @@
 
 .theme-dark .mausritter-treasure-curse {
 	background: hsla(0, 60%, 55%, 0.1);
+}
+
+/* ── Hireling & Warband ── */
+
+.mausritter-hireling,
+.mausritter-warband {
+	/* inherits from .mausritter-block */
+}
+
+/* Hireling pack grid: 1 row x 2 cols (smaller than character's 2x3) */
+.mausritter-grid-hireling-pack {
+	display: grid;
+	grid-template-rows: 80px;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 4px;
+	max-width: 240px;
+	margin-bottom: 8px;
+}
+
+/* Fled badge for hirelings */
+.mausritter-hireling-fled-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+	font-size: 0.75em;
+	font-weight: 700;
+	text-transform: uppercase;
+	margin-left: 8px;
+}
+
+/* Routed badge for warbands */
+.mausritter-warband-routed-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+	font-size: 0.75em;
+	font-weight: 700;
+	text-transform: uppercase;
+	margin-left: 8px;
+}
+
+/* Resource unit label (p/day, p/week) */
+.mausritter-resource-unit {
+	font-size: 0.75em;
+	color: var(--text-muted);
+	margin-left: 4px;
+}
+
+/* Warband notes textarea */
+.mausritter-warband-notes {
+	margin-top: 8px;
+}
+
+.mausritter-warband-textarea {
+	width: 100%;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: 0.85em;
+	resize: vertical;
+	min-height: 60px;
 }

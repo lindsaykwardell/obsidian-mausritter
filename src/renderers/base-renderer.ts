@@ -9,6 +9,8 @@ export abstract class BaseRenderer<T> {
 	protected blockType: string = "";
 	/** Override to look for a different block type in source files (e.g. combat card reads from character blocks) */
 	protected sourceBlockType: string = "";
+	/** The file path of the note currently being rendered */
+	protected currentFilePath: string = "";
 
 	constructor(protected plugin: Plugin) {}
 
@@ -18,6 +20,7 @@ export abstract class BaseRenderer<T> {
 		ctx: MarkdownPostProcessorContext
 	): Promise<void> {
 		const container = el.createDiv({ cls: "mausritter-block" });
+		this.currentFilePath = ctx.sourcePath;
 
 		// Check for cross-file reference
 		const sourceRef = getSourceReference(source);

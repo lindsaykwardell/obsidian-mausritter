@@ -7,6 +7,8 @@ export const PAW_ROWS = 1;
 export const PAW_COLS = 2;
 export const BODY_ROWS = 1;
 export const BODY_COLS = 2;
+export const HIRELING_PACK_ROWS = 1;
+export const HIRELING_PACK_COLS = 2;
 
 // ---- Grid operations ----
 
