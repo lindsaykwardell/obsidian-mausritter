@@ -4,6 +4,14 @@ import { d6, roll3d6kh2 } from "./dice";
 /** XP thresholds for leveling up. Level N requires xpThresholds[N-1] total XP. */
 export const xpThresholds = [0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000];
 
+/** Grit capacity by level: Level 1 = 0, Level 2 = 1, Level 3-4 = 2, Level 5+ = 3 */
+export function getGritCapacity(level: number): number {
+	if (level <= 1) return 0;
+	if (level === 2) return 1;
+	if (level <= 4) return 2;
+	return 3;
+}
+
 export function canLevelUp(character: Character): boolean {
 	const nextLevel = character.level + 1;
 	if (nextLevel > 10) return false;
@@ -52,6 +60,16 @@ export function levelUp(character: Character): LevelUpResult | null {
 		} else {
 			log.push(`${statName.toUpperCase()} roll ${statRoll.total} didn't exceed max ${stat.max}.`);
 		}
+	}
+
+	// Resize grit slots for the new level
+	const gritCapacity = getGritCapacity(character.level);
+	if (gritCapacity > 0) {
+		if (!character.gritSlots) character.gritSlots = [];
+		while (character.gritSlots.length < gritCapacity) {
+			character.gritSlots.push(null);
+		}
+		log.push(`Grit slots: ${gritCapacity}`);
 	}
 
 	return {

@@ -57,5 +57,15 @@ export function fullRest(character: Character): string[] {
 		}
 	}
 
+	// Clear grit slot conditions
+	if (character.gritSlots) {
+		for (let i = 0; i < character.gritSlots.length; i++) {
+			if (character.gritSlots[i]) {
+				log.push(`Cleared grit condition: ${character.gritSlots[i]!.name}`);
+				character.gritSlots[i] = null;
+			}
+		}
+	}
+
 	return log;
 }

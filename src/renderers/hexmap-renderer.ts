@@ -1,24 +1,15 @@
 import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
-import { HexMap, HexTerrain, MapHex, MapSettlement, NPC } from "../types/generator";
-import { generateHexMap, generateMapSettlement, generateNPC } from "../engine/hexmap";
+import { HexMap, HexTerrain, MapHex, MapSettlement } from "../types/generator";
+import { Character, Item } from "../types/character";
+import { generateHexMap, generateMapSettlement, generateNPC, migrateHexMapNpcs } from "../engine/hexmap";
+import { rollSave, StatName } from "../engine/saves";
+import { canLevelUp, levelUp } from "../engine/advancement";
+import { renderInventoryPanel, renderAddItemPanel, renderLog } from "./inventory-panel";
+import { findAllEntitySheets, findPartyHex, giveItemToEntity, EntitySheetRef } from "../engine/vault-scanner";
 import { div, button, span, el } from "../utils/dom-helpers";
 
 // Flat-top hex diamond layout matching Mausritter rulebook
-// 5 columns: col 0 (3 hexes), col 1 (4), col 2 (5), col 3 (4), col 4 (3)
-// Odd columns offset down by H/2
-//
-// Rulebook (1-indexed) → code (0-indexed):
-//            [8]                        [7]
-//         [19] [9]                   [18] [8]
-//       [18] [2] [10]             [17] [1] [9]
-//         [7] [3]                   [6] [2]
-//       [17] [1] [11]            [16] [0] [10]
-//         [6] [4]                   [5] [3]
-//       [16] [5] [12]            [15] [4] [11]
-//         [15] [13]                [14] [12]
-//            [14]                     [13]
-
 const HEX_W = 92;
 const HEX_H = 80;
 const COL_STEP = 69;  // W * 3/4
@@ -59,6 +50,9 @@ const TERRAIN_CLASSES: Record<string, string> = {
 
 const TERRAIN_OPTIONS: HexTerrain[] = ["countryside", "forest", "river", "human town"];
 
+const NPC_PACK_ROWS = 1;
+const NPC_PACK_COLS = 2;
+
 function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -86,6 +80,11 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		const state = data;
 		// Migrate older data missing partyHex
 		if (state.partyHex === undefined) state.partyHex = -1;
+
+		// Migrate old-format NPCs to full Character objects
+		if (migrateHexMapNpcs(state)) {
+			updateState(state);
+		}
 
 		// Map name
 		const nameRow = div("mausritter-hexmap-name-row");
@@ -225,8 +224,8 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		titleRow.appendChild(actions);
 		panel.appendChild(titleRow);
 
-		// Read-only display
-		this.renderHexFields(panel, hex);
+		// Read-only display with inline NPC edit buttons
+		this.renderHexFields(panel, hex, state, updateState);
 	}
 
 	renderHexDetail(panel: HTMLElement, hex: MapHex): void {
@@ -236,7 +235,12 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		this.renderHexFields(panel, hex);
 	}
 
-	private renderHexFields(panel: HTMLElement, hex: MapHex): void {
+	private renderHexFields(
+		panel: HTMLElement,
+		hex: MapHex,
+		state?: HexMap,
+		updateState?: (data: HexMap) => void
+	): void {
 		panel.appendChild(div("mausritter-hexmap-detail-field", [
 			span("mausritter-label", "Terrain: "),
 			span("", capitalize(hex.terrain)),
@@ -255,7 +259,7 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		}
 
 		if (hex.settlement) {
-			this.renderSettlementDetail(panel, hex.settlement);
+			this.renderSettlementDetail(panel, hex.settlement, state, updateState);
 		}
 
 		// Hex-level NPCs (outside settlements)
@@ -263,7 +267,7 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		if (hexNpcs.length) {
 			panel.appendChild(div("mausritter-subtitle", ["NPCs"]));
 			for (const npc of hexNpcs) {
-				panel.appendChild(this.renderNPCCard(npc));
+				this.appendNPCCardWithEdit(panel, npc, state, updateState);
 			}
 		}
 	}
@@ -284,8 +288,6 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		actions.appendChild(
 			button("Done", () => {
 				updateState(state);
-				// Manually re-render in read-only mode since Obsidian
-				// may not re-trigger the block processor after persistState.
 				panel.empty();
 				this.renderHexDetailEditable(panel, state, updateState);
 			}, "mausritter-btn mausritter-btn-small mausritter-btn-primary")
@@ -330,21 +332,8 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 			// Settlement NPCs
 			if (hex.settlement.npcs.length) {
 				panel.appendChild(div("mausritter-subtitle", ["Settlement NPCs"]));
-				for (let i = 0; i < hex.settlement.npcs.length; i++) {
-					const npcIdx = i;
-					panel.appendChild(this.renderNPCEditCard(
-						hex.settlement.npcs[npcIdx],
-						state,
-						() => {
-							hex.settlement!.npcs.splice(npcIdx, 1);
-							this.renderEditMode(panel, state, updateState);
-						},
-						(targetHexId: number) => {
-							const npc = hex.settlement!.npcs.splice(npcIdx, 1)[0];
-							this.moveNPCToHex(state, npc, targetHexId);
-							this.renderEditMode(panel, state, updateState);
-						},
-					));
+				for (const npc of hex.settlement.npcs) {
+					this.appendNPCCardWithEdit(panel, npc, state, updateState);
 				}
 			}
 
@@ -374,21 +363,8 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		// Hex-level NPCs (outside settlement)
 		if (!hex.npcs) hex.npcs = [];
 		panel.appendChild(div("mausritter-subtitle", ["NPCs"]));
-		for (let i = 0; i < hex.npcs.length; i++) {
-			const npcIdx = i;
-			panel.appendChild(this.renderNPCEditCard(
-				hex.npcs[npcIdx],
-				state,
-				() => {
-					hex.npcs.splice(npcIdx, 1);
-					this.renderEditMode(panel, state, updateState);
-				},
-				(targetHexId: number) => {
-					const npc = hex.npcs.splice(npcIdx, 1)[0];
-					this.moveNPCToHex(state, npc, targetHexId);
-					this.renderEditMode(panel, state, updateState);
-				},
-			));
+		for (const npc of hex.npcs) {
+			this.appendNPCCardWithEdit(panel, npc, state, updateState);
 		}
 
 		panel.appendChild(
@@ -400,84 +376,174 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 	}
 
 	private renderNPCEditCard(
-		npc: NPC,
+		npc: Character,
 		state: HexMap,
-		onRemove: () => void,
-		onMove: (targetHexId: number) => void,
+		updateState: (data: HexMap) => void,
+		headerActions?: HTMLElement,
 	): HTMLElement {
 		const card = div("mausritter-npc-card mausritter-npc-card-edit");
 
-		// Header with name
-		card.appendChild(div("mausritter-npc-edit-header", [
-			span("mausritter-npc-name", `${npc.name} ${npc.lastName ?? ""}`)
-		]));
+		// Header with Done + Move actions
+		if (headerActions) {
+			const header = div("mausritter-npc-header");
+			header.appendChild(span("mausritter-npc-name", npc.name));
+			header.appendChild(span("mausritter-npc-position", npc.socialPosition ?? ""));
+			header.appendChild(headerActions);
+			card.appendChild(header);
+		}
 
-		// Editable fields
-		card.appendChild(this.editField("First Name", npc.name, (v) => { npc.name = v; }));
+		// Helper to create an NPC-level update callback
+		const npcUpdate = (ch: Character) => {
+			// npc is a reference within state, so just persist the parent hexmap
+			updateState(state);
+		};
+
+		// Name + lastName + species inputs
+		card.appendChild(this.editField("Name", npc.name, (v) => { npc.name = v; }));
 		card.appendChild(this.editField("Last Name", npc.lastName ?? "", (v) => { npc.lastName = v; }));
+		card.appendChild(this.editField("Species", npc.species ?? "Mouse", (v) => { npc.species = v.trim() || "Mouse"; }));
+
+		// Personality fields
 		card.appendChild(this.editField("Social Position", npc.socialPosition ?? "", (v) => { npc.socialPosition = v; }));
 		card.appendChild(this.editField("Birthsign", npc.birthsign ?? "", (v) => { npc.birthsign = v; }));
 		card.appendChild(this.editField("Disposition", npc.disposition ?? "", (v) => { npc.disposition = v; }));
 		card.appendChild(this.editField("Appearance", npc.appearance ?? "", (v) => { npc.appearance = v; }));
 		card.appendChild(this.editField("Quirk", npc.quirk ?? "", (v) => { npc.quirk = v; }));
-		card.appendChild(this.editField("Wants", npc.want, (v) => { npc.want = v; }));
+		card.appendChild(this.editField("Wants", npc.want ?? "", (v) => { npc.want = v; }));
 		card.appendChild(this.editField("Relationship", npc.relationship ?? "", (v) => { npc.relationship = v; }));
 
-		// Stats row
-		const statsRow = div("mausritter-npc-edit-stats");
-		for (const stat of ["hp", "str", "dex", "wil"] as const) {
-			const statEl = div("mausritter-npc-edit-stat");
-			statEl.appendChild(span("mausritter-label", `${stat.toUpperCase()}: `));
-			const input = el("input", {
-				class: "mausritter-npc-stat-input",
-				type: "number",
-				value: String(npc[stat] ?? 0),
-			}) as HTMLInputElement;
-			input.addEventListener("input", () => {
-				(npc as any)[stat] = parseInt(input.value) || 0;
-			});
-			statEl.appendChild(input);
-			statsRow.appendChild(statEl);
+		// Stats row (current/max inputs with Save buttons)
+		const statsRow = div("mausritter-stats-row");
+		for (const statName of ["str", "dex", "wil"] as StatName[]) {
+			statsRow.appendChild(this.renderStatEditor(statName, npc, npcUpdate));
 		}
 		card.appendChild(statsRow);
 
-		// Items
-		card.appendChild(this.editField("Items", (npc.items ?? []).join(", "), (v) => {
-			npc.items = v.split(",").map(s => s.trim()).filter(Boolean);
-		}));
+		// HP, Pips row
+		const resourceRow = div("mausritter-resource-row");
+		resourceRow.appendChild(this.renderHpEditor(npc, npcUpdate));
+		resourceRow.appendChild(this.renderPipsEditor(npc, npcUpdate));
+		card.appendChild(resourceRow);
 
-		// Actions: Move to hex + Remove
-		const actions = div("mausritter-npc-actions");
-
-		// Move dropdown
-		const moveRow = div("mausritter-npc-move");
-		moveRow.appendChild(span("mausritter-label", "Move to hex: "));
-		const select = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
-		select.appendChild(el("option", { value: "-1" }, ["—"]));
-		for (let i = 0; i < state.hexes.length; i++) {
-			const h = state.hexes[i];
-			if (i === state.selectedHex) continue;
-			const label = h.settlement ? `${i}: ${h.settlement.name}` : `${i}: ${h.name}`;
-			select.appendChild(el("option", { value: String(i) }, [label]));
+		// Level Up button
+		if (canLevelUp(npc)) {
+			card.appendChild(
+				button("Level Up!", () => {
+					const result = levelUp(npc);
+					if (result) {
+						npc.log.push(...result.log);
+						updateState(state);
+					}
+				}, "mausritter-btn mausritter-btn-primary mausritter-btn-tiny")
+			);
 		}
-		moveRow.appendChild(select);
-		moveRow.appendChild(
-			button("Move", () => {
-				const target = parseInt(select.value);
-				if (target >= 0) onMove(target);
-			}, "mausritter-btn mausritter-btn-small")
-		);
-		actions.appendChild(moveRow);
 
-		actions.appendChild(
-			button("Remove NPC", onRemove, "mausritter-btn mausritter-btn-small mausritter-btn-danger")
-		);
-		card.appendChild(actions);
+		// Ensure arrays exist
+		if (!npc.ground) npc.ground = [];
+		if (!npc.pawGrid) npc.pawGrid = [];
+		if (!npc.bodyGrid) npc.bodyGrid = [];
+		if (!npc.packGrid) npc.packGrid = [];
+		if (!npc.log) npc.log = [];
+
+		// Full inventory panel
+		renderInventoryPanel(card, npc, npcUpdate, this.plugin, {
+			packRows: NPC_PACK_ROWS,
+			packCols: NPC_PACK_COLS,
+			scopeId: npc.id,
+		});
+
+		// Add item — collapsible
+		const addItemDetails = document.createElement("details");
+		addItemDetails.className = "mausritter-collapsible";
+		const addItemSummary = document.createElement("summary");
+		addItemSummary.className = "mausritter-collapsible-summary";
+		addItemSummary.textContent = "Add Item / Condition";
+		addItemDetails.appendChild(addItemSummary);
+		addItemDetails.appendChild(renderAddItemPanel(npc, npcUpdate, NPC_PACK_ROWS, NPC_PACK_COLS));
+		card.appendChild(addItemDetails);
+
+		// Action log — collapsible
+		const logDetails = document.createElement("details");
+		logDetails.className = "mausritter-collapsible";
+		const logSummary = document.createElement("summary");
+		logSummary.className = "mausritter-collapsible-summary";
+		logSummary.textContent = "Action Log";
+		logDetails.appendChild(logSummary);
+		logDetails.appendChild(renderLog(npc));
+		card.appendChild(logDetails);
 
 		return card;
 	}
 
-	private moveNPCToHex(state: HexMap, npc: NPC, targetHexId: number): void {
+	private renderStatEditor(statName: StatName, npc: Character, updateState: (data: Character) => void): HTMLElement {
+		const stat = npc[statName];
+		const box = div("mausritter-stat-box");
+		box.appendChild(div("mausritter-stat-label", [statName.toUpperCase()]));
+		const values = div("mausritter-stat-values");
+
+		const currentInput = el("input", { class: "mausritter-stat-input mausritter-stat-current", type: "number" }) as HTMLInputElement;
+		currentInput.value = String(stat.current);
+		currentInput.addEventListener("change", () => { stat.current = parseInt(currentInput.value) || 0; updateState(npc); });
+
+		const maxInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
+		maxInput.value = String(stat.max);
+		maxInput.addEventListener("change", () => { stat.max = parseInt(maxInput.value) || 0; updateState(npc); });
+
+		values.appendChild(currentInput);
+		values.appendChild(span("mausritter-stat-slash", "/"));
+		values.appendChild(maxInput);
+		box.appendChild(values);
+
+		box.appendChild(
+			button("Save", () => {
+				const result = rollSave(npc, statName);
+				npc.log.push(
+					`${statName.toUpperCase()} save: rolled ${result.roll} vs ${result.statValue} — ${result.success ? "Success!" : "Failure!"}`
+				);
+				updateState(npc);
+			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-save")
+		);
+
+		return box;
+	}
+
+	private renderHpEditor(npc: Character, updateState: (data: Character) => void): HTMLElement {
+		const box = div("mausritter-resource-box");
+		box.appendChild(div("mausritter-resource-label", ["HP"]));
+		const values = div("mausritter-stat-values");
+
+		const currentInput = el("input", { class: "mausritter-stat-input mausritter-stat-current", type: "number" }) as HTMLInputElement;
+		currentInput.value = String(npc.hp.current);
+		currentInput.addEventListener("change", () => {
+			npc.hp.current = Math.max(0, parseInt(currentInput.value) || 0);
+			updateState(npc);
+		});
+
+		const maxInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
+		maxInput.value = String(npc.hp.max);
+		maxInput.addEventListener("change", () => {
+			npc.hp.max = Math.max(1, parseInt(maxInput.value) || 1);
+			updateState(npc);
+		});
+
+		values.appendChild(currentInput);
+		values.appendChild(span("mausritter-stat-slash", "/"));
+		values.appendChild(maxInput);
+		box.appendChild(values);
+		return box;
+	}
+
+	private renderPipsEditor(npc: Character, updateState: (data: Character) => void): HTMLElement {
+		const box = div("mausritter-resource-box");
+		box.appendChild(div("mausritter-resource-label", ["Pips"]));
+		const pipsInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
+		pipsInput.value = String(npc.pips ?? 0);
+		pipsInput.addEventListener("change", () => { npc.pips = parseInt(pipsInput.value) || 0; updateState(npc); });
+		box.appendChild(pipsInput);
+		return box;
+	}
+
+	private moveNPCToHex(state: HexMap, npc: Character, targetHexId: number): void {
 		const targetHex = state.hexes[targetHexId];
 		if (!targetHex) return;
 
@@ -506,7 +572,12 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		return row;
 	}
 
-	private renderSettlementDetail(panel: HTMLElement, s: MapSettlement): void {
+	private renderSettlementDetail(
+		panel: HTMLElement,
+		s: MapSettlement,
+		state?: HexMap,
+		updateState?: (data: HexMap) => void
+	): void {
 		panel.appendChild(div("mausritter-subtitle", ["Settlement"]));
 
 		panel.appendChild(div("mausritter-hexmap-detail-field", [
@@ -555,38 +626,382 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 			}
 		}
 
+		// Constructions and Bank (above NPCs)
+		if (state && updateState) {
+			this.renderConstructions(panel, s, state, updateState);
+			this.renderBank(panel, s, state, updateState);
+		}
+
 		if (s.npcs.length) {
 			panel.appendChild(div("mausritter-subtitle", ["NPCs"]));
 			for (const npc of s.npcs) {
-				panel.appendChild(this.renderNPCCard(npc));
+				this.appendNPCCardWithEdit(panel, npc, state, updateState);
 			}
 		}
 	}
 
-	private renderNPCCard(npc: NPC): HTMLElement {
+	private renderConstructions(
+		panel: HTMLElement,
+		s: MapSettlement,
+		state: HexMap,
+		updateState: (data: HexMap) => void
+	): void {
+		if (!s.constructions) s.constructions = [];
+
+		panel.appendChild(div("mausritter-subtitle", ["Constructions"]));
+		const section = div("mausritter-constructions");
+
+		const constructionTypes: { type: string; costPerUnit: number }[] = [
+			{ type: "Tunnel (per 6\")", costPerUnit: 10 },
+			{ type: "Poor room (per 6\" cube)", costPerUnit: 100 },
+			{ type: "Standard room (per 6\" cube)", costPerUnit: 500 },
+			{ type: "Grand room (per 6\" cube)", costPerUnit: 2000 },
+		];
+
+		for (const c of s.constructions) {
+			const row = div("mausritter-construction-row");
+			row.appendChild(span("mausritter-construction-name", `${c.type}: ${c.count}`));
+			row.appendChild(span("mausritter-construction-cost", `(${c.count * c.costPerUnit}p total, ${Math.floor(c.count * c.costPerUnit * 0.01)}p/month upkeep)`));
+
+			row.appendChild(
+				button("-", () => {
+					c.count = Math.max(0, c.count - 1);
+					if (c.count === 0) {
+						s.constructions = s.constructions!.filter(x => x !== c);
+					}
+					updateState(state);
+				}, "mausritter-btn mausritter-btn-tiny")
+			);
+			row.appendChild(
+				button("+", () => {
+					c.count++;
+					updateState(state);
+				}, "mausritter-btn mausritter-btn-tiny")
+			);
+
+			section.appendChild(row);
+		}
+
+		// Add dropdown
+		const addRow = div("mausritter-construction-add");
+		const select = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
+		for (const ct of constructionTypes) {
+			select.appendChild(el("option", { value: ct.type }, [`${ct.type} (${ct.costPerUnit}p)`]));
+		}
+		addRow.appendChild(select);
+		addRow.appendChild(
+			button("Add", () => {
+				const ct = constructionTypes.find(t => t.type === select.value);
+				if (!ct) return;
+				const existing = s.constructions!.find(c => c.type === ct.type);
+				if (existing) {
+					existing.count++;
+				} else {
+					s.constructions!.push({ type: ct.type, count: 1, costPerUnit: ct.costPerUnit });
+				}
+				updateState(state);
+			}, "mausritter-btn mausritter-btn-small")
+		);
+		section.appendChild(addRow);
+
+		panel.appendChild(section);
+	}
+
+	private renderBank(
+		panel: HTMLElement,
+		s: MapSettlement,
+		state: HexMap,
+		updateState: (data: HexMap) => void
+	): void {
+		if (!s.bank) s.bank = { pips: 0, items: [] };
+
+		panel.appendChild(div("mausritter-subtitle", ["Bank"]));
+		const section = div("mausritter-bank");
+
+		// Pips
+		const pipsRow = div("mausritter-bank-pips-row");
+		pipsRow.appendChild(span("mausritter-label", "Stored Pips: "));
+		const pipsInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
+		pipsInput.value = String(s.bank.pips);
+		pipsInput.addEventListener("change", () => {
+			s.bank!.pips = Math.max(0, parseInt(pipsInput.value) || 0);
+			updateState(state);
+		});
+		pipsRow.appendChild(pipsInput);
+		pipsRow.appendChild(span("mausritter-bank-fee-hint", "(1% fee on withdrawal)"));
+		section.appendChild(pipsRow);
+
+		// Items rendered as item cards
+		if (s.bank.items.length > 0) {
+			const itemsList = div("mausritter-bank-items");
+			itemsList.appendChild(span("mausritter-label", "Stored Items:"));
+			for (let i = 0; i < s.bank.items.length; i++) {
+				const item = s.bank.items[i];
+				const cardWrapper = div("mausritter-bank-item-card");
+				cardWrapper.appendChild(this.renderBankItemCard(item, i, s, state, updateState));
+				itemsList.appendChild(cardWrapper);
+			}
+			section.appendChild(itemsList);
+		} else {
+			section.appendChild(div("mausritter-bank-empty-hint", [
+				"No items stored. Use the \u2192 (give) button on items to deposit."
+			]));
+		}
+
+		panel.appendChild(section);
+	}
+
+	private renderBankItemCard(
+		item: Item,
+		index: number,
+		s: MapSettlement,
+		state: HexMap,
+		updateState: (data: HexMap) => void
+	): HTMLElement {
+		const isCondition = item.type === "condition";
+		const itemEl = div(
+			`mausritter-item ${isCondition ? "mausritter-item-condition" : `mausritter-item-${item.type}`}`
+		);
+
+		// Top-right info
+		const topRight: string[] = [];
+		if (item.damage) topRight.push(item.damage);
+		if (item.defence) topRight.push(`+${item.defence}`);
+		if (item.width > 1 || item.height > 1) topRight.push(`${item.width}x${item.height}`);
+		if (topRight.length > 0) {
+			itemEl.appendChild(span("mausritter-item-topright", topRight.join(" ")));
+		}
+
+		itemEl.appendChild(span("mausritter-item-name", item.name));
+
+		if (item.usage) {
+			const usageEl = div("mausritter-usage-dots");
+			for (let d = 0; d < item.usage.total; d++) {
+				usageEl.appendChild(span(
+					d < item.usage.used ? "mausritter-usage-dot mausritter-usage-used" : "mausritter-usage-dot"
+				));
+			}
+			itemEl.appendChild(usageEl);
+		}
+
+		const btnRow = div("mausritter-item-actions");
+
+		// Give to button — opens dropdown of characters/hirelings
+		const giveBtn = button("\u2192", () => {
+			this.showBankGiveDropdown(giveBtn, item, index, s, state, updateState);
+		}, "mausritter-btn mausritter-btn-tiny mausritter-btn-give");
+		btnRow.appendChild(giveBtn);
+
+		// Delete from bank
+		btnRow.appendChild(
+			button("\u2715", () => {
+				s.bank!.items.splice(index, 1);
+				updateState(state);
+			}, "mausritter-btn mausritter-btn-tiny mausritter-btn-delete")
+		);
+
+		itemEl.appendChild(btnRow);
+		return itemEl;
+	}
+
+	private showBankGiveDropdown(
+		anchor: HTMLElement,
+		item: Item,
+		index: number,
+		s: MapSettlement,
+		state: HexMap,
+		updateState: (data: HexMap) => void
+	): void {
+		const existing = document.querySelector(".mausritter-give-dropdown");
+		if (existing) existing.remove();
+
+		Promise.all([findAllEntitySheets(this.plugin), findPartyHex(this.plugin)]).then(([sheets, partyHex]) => {
+			// Only show characters and hirelings (not NPCs unless at same hex)
+			const filtered = sheets.filter(sheet => {
+				if (sheet.entityType === "npc") {
+					return sheet.hexId != null && sheet.hexId >= 0 && sheet.hexId === partyHex;
+				}
+				return true;
+			});
+
+			if (filtered.length === 0) {
+				anchor.textContent = "!";
+				setTimeout(() => { anchor.textContent = "\u2192"; }, 1500);
+				return;
+			}
+
+			const dropdown = div("mausritter-give-dropdown");
+			const rect = anchor.getBoundingClientRect();
+			dropdown.style.top = `${rect.bottom + window.scrollY}px`;
+			dropdown.style.left = `${rect.left + window.scrollX}px`;
+
+			for (const sheet of filtered) {
+				const label = `${sheet.name} (${sheet.entityType})`;
+				const option = button(label, async () => {
+					const success = await giveItemToEntity(this.plugin, sheet, { ...item });
+					if (success) {
+						s.bank!.items.splice(index, 1);
+						updateState(state);
+					}
+					dropdown.remove();
+				}, "mausritter-give-dropdown-option");
+				dropdown.appendChild(option);
+			}
+
+			const closeHandler = (e: MouseEvent) => {
+				if (!dropdown.contains(e.target as Node) && e.target !== anchor) {
+					dropdown.remove();
+					document.removeEventListener("click", closeHandler);
+				}
+			};
+			setTimeout(() => document.addEventListener("click", closeHandler), 0);
+
+			document.body.appendChild(dropdown);
+		});
+	}
+
+	/** Append an NPC card to the panel. If state/updateState are provided, includes Edit/Move/Done controls. */
+	private appendNPCCardWithEdit(
+		panel: HTMLElement,
+		npc: Character,
+		state?: HexMap,
+		updateState?: (data: HexMap) => void
+	): void {
+		if (!state || !updateState) {
+			panel.appendChild(this.renderNPCCard(npc));
+			return;
+		}
+
+		const wrapper = div("mausritter-npc-card-wrapper");
+
+		// Find which hex/settlement array this NPC belongs to
+		const findNpcLocation = () => {
+			for (const hex of state.hexes) {
+				if (hex.npcs) {
+					const idx = hex.npcs.indexOf(npc);
+					if (idx >= 0) return { array: hex.npcs, idx };
+				}
+				if (hex.settlement?.npcs) {
+					const idx = hex.settlement.npcs.indexOf(npc);
+					if (idx >= 0) return { array: hex.settlement.npcs, idx };
+				}
+			}
+			return null;
+		};
+
+		const showMoveDropdown = (anchor: HTMLElement) => {
+			const existing = document.querySelector(".mausritter-give-dropdown");
+			if (existing) existing.remove();
+
+			const dropdown = div("mausritter-give-dropdown");
+			const rect = anchor.getBoundingClientRect();
+			dropdown.style.top = `${rect.bottom + window.scrollY}px`;
+			dropdown.style.left = `${rect.left + window.scrollX}px`;
+
+			for (let i = 0; i < state.hexes.length; i++) {
+				if (i === state.selectedHex) continue;
+				const h = state.hexes[i];
+				const label = h.settlement ? `${i}: ${h.settlement.name}` : `${i}: ${h.name}`;
+				const option = button(label, () => {
+					const loc = findNpcLocation();
+					if (loc) {
+						const moved = loc.array.splice(loc.idx, 1)[0];
+						this.moveNPCToHex(state, moved, i);
+					}
+					wrapper.empty();
+					wrapper.appendChild(span("mausritter-npc-moved", `${npc.name} moved to hex ${i}`));
+					updateState(state);
+					dropdown.remove();
+				}, "mausritter-give-dropdown-option");
+				dropdown.appendChild(option);
+			}
+
+			const closeHandler = (e: MouseEvent) => {
+				if (!dropdown.contains(e.target as Node) && e.target !== anchor) {
+					dropdown.remove();
+					document.removeEventListener("click", closeHandler);
+				}
+			};
+			setTimeout(() => document.addEventListener("click", closeHandler), 0);
+
+			document.body.appendChild(dropdown);
+		};
+
+		const isEditing = () => state.editingNpcs?.includes(npc.id) ?? false;
+
+		const setEditing = (editing: boolean) => {
+			if (!state.editingNpcs) state.editingNpcs = [];
+			if (editing && !state.editingNpcs.includes(npc.id)) {
+				state.editingNpcs.push(npc.id);
+			} else if (!editing) {
+				state.editingNpcs = state.editingNpcs.filter(id => id !== npc.id);
+			}
+		};
+
+		const renderCard = () => {
+			wrapper.empty();
+			if (isEditing()) {
+				const actions = div("mausritter-npc-header-actions");
+				actions.appendChild(
+					button("Done", () => {
+						setEditing(false);
+						updateState(state);
+					}, "mausritter-btn mausritter-btn-small mausritter-btn-primary")
+				);
+				actions.appendChild(
+					button("Remove", () => {
+						setEditing(false);
+						const loc = findNpcLocation();
+						if (loc) loc.array.splice(loc.idx, 1);
+						wrapper.remove();
+						updateState(state);
+					}, "mausritter-btn mausritter-btn-small mausritter-btn-danger")
+				);
+				const editCard = this.renderNPCEditCard(npc, state, updateState, actions);
+				wrapper.appendChild(editCard);
+			} else {
+				const actions = div("mausritter-npc-header-actions");
+				actions.appendChild(button("Edit", () => {
+					setEditing(true);
+					updateState(state);
+				}, "mausritter-btn mausritter-btn-small"));
+				const moveBtn = button("Move", () => showMoveDropdown(moveBtn), "mausritter-btn mausritter-btn-small");
+				actions.appendChild(moveBtn);
+				const card = this.renderNPCCard(npc, actions);
+				wrapper.appendChild(card);
+			}
+		};
+
+		renderCard();
+		panel.appendChild(wrapper);
+	}
+
+	private renderNPCCard(
+		npc: Character,
+		headerActions?: HTMLElement,
+	): HTMLElement {
 		const card = div("mausritter-npc-card");
 
-		// Header: name + stats
+		// Header: name + social position + optional action buttons
 		const header = div("mausritter-npc-header");
-		header.appendChild(span("mausritter-npc-name", `${npc.name} ${npc.lastName ?? ""}`));
+		header.appendChild(span("mausritter-npc-name", npc.name));
 		header.appendChild(span("mausritter-npc-position", npc.socialPosition ?? ""));
+		if (headerActions) header.appendChild(headerActions);
 		card.appendChild(header);
 
-		// Stats row
-		if (npc.hp !== undefined) {
-			const stats = div("mausritter-npc-stats");
-			stats.appendChild(span("mausritter-npc-stat", `HP ${npc.hp}`));
-			stats.appendChild(span("mausritter-npc-stat", `STR ${npc.str}`));
-			stats.appendChild(span("mausritter-npc-stat", `DEX ${npc.dex}`));
-			stats.appendChild(span("mausritter-npc-stat", `WIL ${npc.wil}`));
-			card.appendChild(stats);
-		}
+		// Stats row (current/max)
+		const stats = div("mausritter-npc-stats");
+		stats.appendChild(span("mausritter-npc-stat", `HP ${npc.hp.current}/${npc.hp.max}`));
+		stats.appendChild(span("mausritter-npc-stat", `STR ${npc.str.current}/${npc.str.max}`));
+		stats.appendChild(span("mausritter-npc-stat", `DEX ${npc.dex.current}/${npc.dex.max}`));
+		stats.appendChild(span("mausritter-npc-stat", `WIL ${npc.wil.current}/${npc.wil.max}`));
+		card.appendChild(stats);
 
 		// Birthsign
 		if (npc.birthsign) {
 			card.appendChild(div("mausritter-npc-field", [
 				span("mausritter-label", "Birthsign: "),
-				span("", `${npc.birthsign} (${npc.disposition})`),
+				span("", `${npc.birthsign}${npc.disposition ? ` (${npc.disposition})` : ""}`),
 			]));
 		}
 
@@ -607,10 +1022,12 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 		}
 
 		// Want
-		card.appendChild(div("mausritter-npc-field", [
-			span("mausritter-label", "Wants: "),
-			span("", npc.want),
-		]));
+		if (npc.want) {
+			card.appendChild(div("mausritter-npc-field", [
+				span("mausritter-label", "Wants: "),
+				span("", npc.want),
+			]));
+		}
 
 		// Relationship
 		if (npc.relationship) {
@@ -620,11 +1037,20 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 			]));
 		}
 
-		// Items
-		if (npc.items?.length) {
+		// Ground items summary
+		if (npc.ground?.length) {
 			card.appendChild(div("mausritter-npc-field", [
 				span("mausritter-label", "Carrying: "),
-				span("", npc.items.join(", ")),
+				span("", npc.ground.map(i => i.name).join(", ")),
+			]));
+		}
+
+		// Grid items summary
+		const allGridItems = [...(npc.pawGrid ?? []), ...(npc.bodyGrid ?? []), ...(npc.packGrid ?? [])];
+		if (allGridItems.length) {
+			card.appendChild(div("mausritter-npc-field", [
+				span("mausritter-label", "Equipped: "),
+				span("", allGridItems.map(gi => gi.item.name).join(", ")),
 			]));
 		}
 

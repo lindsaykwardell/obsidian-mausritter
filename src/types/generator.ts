@@ -5,7 +5,7 @@ export interface Settlement {
 	feature: string;
 	industry: string;
 	event: string;
-	npcs: NPC[];
+	npcs: NpcSummary[];
 }
 
 export interface HexFeature {
@@ -19,7 +19,8 @@ export interface Hex {
 	feature: HexFeature;
 }
 
-export interface NPC {
+/** Simplified NPC data used by the generator renderer's ephemeral display */
+export interface NpcSummary {
 	name: string;
 	lastName: string;
 	socialPosition: string;
@@ -35,6 +36,7 @@ export interface NPC {
 	wil: number;
 	items: string[];
 	hexId: number;
+	paymentForService: string;
 }
 
 export interface Hireling {
@@ -50,6 +52,21 @@ export interface Hireling {
 export interface WeatherResult {
 	season: string;
 	weather: string;
+	isPoorWeather: boolean;
+	roll: number;
+	seasonalEvent?: string;
+}
+
+export interface EncounterResult {
+	roll: number;
+	result: "encounter" | "omen" | "nothing";
+	prompt: string;
+}
+
+export interface ReactionResult {
+	roll: number;
+	reaction: string;
+	prompt: string;
 }
 
 export interface AdventureSeed {
@@ -57,6 +74,17 @@ export interface AdventureSeed {
 }
 
 export type HexTerrain = "countryside" | "forest" | "river" | "human town";
+
+export interface Construction {
+	type: string;
+	count: number;
+	costPerUnit: number;
+}
+
+export interface SettlementBank {
+	pips: number;
+	items: import("./character").Item[];
+}
 
 export interface MapSettlement {
 	name: string;
@@ -68,7 +96,9 @@ export interface MapSettlement {
 	industries: string[];
 	event: string;
 	taverns: { name: string; specialty: string }[];
-	npcs: NPC[];
+	npcs: import("./character").Character[];
+	constructions?: Construction[];
+	bank?: SettlementBank;
 }
 
 export interface MapHex {
@@ -78,7 +108,7 @@ export interface MapHex {
 	landmark: string;
 	description: string;
 	settlement: MapSettlement | null;
-	npcs: NPC[];
+	npcs: import("./character").Character[];
 }
 
 export interface HexMap {
@@ -86,6 +116,8 @@ export interface HexMap {
 	hexes: MapHex[];
 	selectedHex: number;
 	partyHex: number;
+	/** NPC UUIDs currently in edit mode (transient UI state) */
+	editingNpcs?: string[];
 }
 
 export interface AdventureSiteRoom {

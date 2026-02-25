@@ -1,5 +1,11 @@
-import { HexMap, HexTerrain, MapHex, MapSettlement, NPC } from "../types/generator";
+import { HexMap, HexTerrain, MapHex, MapSettlement, NpcSummary } from "../types/generator";
+import { Character, Item, GridItem } from "../types/character";
 import { d6, roll } from "./dice";
+import {
+	placeOnGrid,
+	PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
+	HIRELING_PACK_ROWS, HIRELING_PACK_COLS,
+} from "./inventory";
 import {
 	settlementDetails, notableFeatures, industries, events,
 	tavernFirstNames, tavernSecondNames, tavernSpecialties,
@@ -8,6 +14,7 @@ import {
 import { landmarks, landmarkDetails } from "../data/landmarks";
 import { mouseNames, mouseLastNames, settlementStartNames, settlementEndNames } from "../data/names";
 import { weapons, armour, gear } from "../data/items";
+import { spellTemplates } from "../data/spells";
 
 function pick<T>(arr: T[]): T {
 	return arr[Math.floor(Math.random() * arr.length)];
@@ -24,7 +31,7 @@ function roll2d6(): number {
 // SRD Non-player mice tables
 const socialPositions = ["Poor", "Common", "Common", "Burghermouse", "Guildmouse", "Noblemouse"];
 
-const birthsigns: { sign: string; disposition: string }[] = [
+const birthsignTable: { sign: string; disposition: string }[] = [
 	{ sign: "Star", disposition: "Brave / Reckless" },
 	{ sign: "Wheel", disposition: "Industrious / Unimaginative" },
 	{ sign: "Acorn", disposition: "Inquisitive / Stubborn" },
@@ -63,24 +70,138 @@ const relationships = [
 	"Never met before",
 ];
 
-const allItems = [
-	...weapons.map(w => w.name),
-	...armour.map(a => a.name),
-	...gear.filter(g => g.name !== "Cart").map(g => g.name),
+/** Spell items derived from spell templates */
+const spellItems: Omit<Item, "equipped">[] = spellTemplates.map(s => ({
+	name: s.name,
+	type: "spell" as const,
+	slots: 1,
+	width: 1,
+	height: 1,
+	usage: { total: 3, used: 0 },
+	description: s.description,
+}));
+
+/** All item templates indexed by name for quick lookup */
+const allItemTemplates = [
+	...weapons,
+	...armour,
+	...gear.filter(g => g.name !== "Cart"),
+	...spellItems,
 ];
 
-export function generateNPC(hexId: number = -1): NPC {
-	const birthsign = birthsigns[d6() - 1];
-	const itemCount = Math.floor(Math.random() * 3); // 0-2 items
+const allItemNames = allItemTemplates.map(t => t.name);
+
+/** Look up an item name in the weapon/armour/gear data and return a proper Item object */
+function resolveItemName(name: string): Item {
+	const template = allItemTemplates.find(t => t.name === name);
+	if (template) {
+		const item: Item = { ...template, equipped: false };
+		if (template.usage) item.usage = { ...template.usage };
+		return item;
+	}
+	// Unrecognized name becomes custom gear
+	return { name, type: "gear", slots: 1, width: 1, height: 1 };
+}
+
+/** Generate a full Character for an NPC with personality and inventory */
+export function generateNPC(hexId: number = -1): Character {
+	const birthsign = birthsignTable[d6() - 1];
+	const hpVal = d6();
+	const strVal = roll2d6();
+	const dexVal = roll2d6();
+	const wilVal = roll2d6();
+	const firstName = pick(mouseNames);
+	const lastName = pick(mouseLastNames);
+	const name = `${firstName} ${lastName}`;
+
+	// Generate 0-2 items and place in appropriate slots
+	const itemCount = Math.floor(Math.random() * 3);
+	const pawGrid: GridItem[] = [];
+	const bodyGrid: GridItem[] = [];
+	const packGrid: GridItem[] = [];
+	const ground: Item[] = [];
+
+	for (let i = 0; i < itemCount; i++) {
+		const item = resolveItemName(pick(allItemNames));
+		if (item.type === "weapon") {
+			if (!placeOnGrid(pawGrid, item, PAW_ROWS, PAW_COLS)) {
+				ground.push(item);
+			}
+		} else if (item.type === "armour") {
+			if (!placeOnGrid(bodyGrid, item, BODY_ROWS, BODY_COLS)) {
+				ground.push(item);
+			}
+		} else {
+			if (!placeOnGrid(packGrid, item, HIRELING_PACK_ROWS, HIRELING_PACK_COLS)) {
+				ground.push(item);
+			}
+		}
+	}
+
+	// Social position determines starting pips
+	const socialPosition = socialPositions[d6() - 1];
+	const pipsBySocialPosition: Record<string, () => number> = {
+		"Poor": () => d6(),
+		"Common": () => d6() + d6(),
+		"Burghermouse": () => d6() + d6() + d6(),
+		"Guildmouse": () => d6() * 10,
+		"Noblemouse": () => d6() * 50,
+	};
+	const pips = (pipsBySocialPosition[socialPosition] ?? (() => d6()))();
+
+	return {
+		id: crypto.randomUUID(),
+		characterType: "npc",
+		name,
+		species: "Mouse",
+		level: 1,
+		xp: 0,
+		pips,
+		hp: { current: hpVal, max: hpVal },
+		str: { current: strVal, max: strVal },
+		dex: { current: dexVal, max: dexVal },
+		wil: { current: wilVal, max: wilVal },
+		pawGrid,
+		bodyGrid,
+		packGrid,
+		ground,
+		log: [`Created ${name} — HP ${hpVal}, STR ${strVal}, DEX ${dexVal}, WIL ${wilVal}, ${pips} pips`],
+		hexId,
+		lastName,
+		socialPosition,
+		birthsign: birthsign.sign,
+		disposition: birthsign.disposition,
+		appearance: appearances[d20()],
+		quirk: quirks[d20()],
+		want: npcWants[d20()],
+		relationship: relationships[d20()],
+	};
+}
+
+/** Generate an NpcSummary for the generator renderer's ephemeral display */
+export function generateNpcSummary(hexId: number = -1): NpcSummary {
+	const birthsign = birthsignTable[d6() - 1];
+	const itemCount = Math.floor(Math.random() * 3);
 	const items: string[] = [];
 	for (let i = 0; i < itemCount; i++) {
-		items.push(pick(allItems));
+		items.push(pick(allItemNames));
 	}
+
+	const socialPosition = socialPositions[d6() - 1];
+
+	// SRD payment for service table
+	const paymentTable: Record<string, string> = {
+		"Poor": "d6p",
+		"Common": "d6 x 10p",
+		"Burghermouse": "d6 x 50p",
+		"Guildmouse": "d4 x 100p",
+		"Noblemouse": "d4 x 1000p",
+	};
 
 	return {
 		name: pick(mouseNames),
 		lastName: pick(mouseLastNames),
-		socialPosition: socialPositions[d6() - 1],
+		socialPosition,
 		birthsign: birthsign.sign,
 		disposition: birthsign.disposition,
 		appearance: appearances[d20()],
@@ -93,7 +214,83 @@ export function generateNPC(hexId: number = -1): NPC {
 		wil: roll2d6(),
 		items,
 		hexId,
+		paymentForService: paymentTable[socialPosition] ?? "d6p",
 	};
+}
+
+/**
+ * Migrate old-format NPCs (number stats, string items) to full Character objects.
+ * Returns true if any migration occurred.
+ */
+export function migrateHexMapNpcs(hexMap: HexMap): boolean {
+	let migrated = false;
+
+	function migrateNpcArray(npcs: any[]): Character[] {
+		const result: Character[] = [];
+		for (const npc of npcs) {
+			if (typeof npc.hp === "number") {
+				// Old format — convert to Character
+				migrated = true;
+				const ground: Item[] = [];
+				if (Array.isArray(npc.items)) {
+					for (const itemName of npc.items) {
+						if (typeof itemName === "string") {
+							ground.push(resolveItemName(itemName));
+						}
+					}
+				}
+				result.push({
+					id: npc.id ?? crypto.randomUUID(),
+					characterType: "npc",
+					name: npc.name ? `${npc.name}${npc.lastName ? ` ${npc.lastName}` : ""}` : "Unknown",
+					species: npc.species ?? "Mouse",
+					level: npc.level ?? 1,
+					xp: npc.xp ?? 0,
+					hp: { current: npc.hp, max: npc.hp },
+					str: { current: npc.str ?? 10, max: npc.str ?? 10 },
+					dex: { current: npc.dex ?? 10, max: npc.dex ?? 10 },
+					wil: { current: npc.wil ?? 10, max: npc.wil ?? 10 },
+					pawGrid: npc.pawGrid ?? [],
+					bodyGrid: npc.bodyGrid ?? [],
+					packGrid: npc.packGrid ?? [],
+					ground,
+					log: npc.log ?? [],
+					hexId: npc.hexId,
+					lastName: npc.lastName,
+					socialPosition: npc.socialPosition,
+					birthsign: npc.birthsign,
+					disposition: npc.disposition,
+					appearance: npc.appearance,
+					quirk: npc.quirk,
+					want: npc.want,
+					relationship: npc.relationship,
+				});
+			} else {
+				// Already Character format — ensure id exists
+				if (!npc.id) {
+					npc.id = crypto.randomUUID();
+					migrated = true;
+				}
+				if (!npc.characterType) {
+					npc.characterType = "npc";
+					migrated = true;
+				}
+				result.push(npc as Character);
+			}
+		}
+		return result;
+	}
+
+	for (const hex of hexMap.hexes) {
+		if (hex.npcs?.length) {
+			hex.npcs = migrateNpcArray(hex.npcs);
+		}
+		if (hex.settlement?.npcs?.length) {
+			hex.settlement.npcs = migrateNpcArray(hex.settlement.npcs);
+		}
+	}
+
+	return migrated;
 }
 
 export function generateMapSettlement(): MapSettlement {
@@ -102,7 +299,7 @@ export function generateMapSettlement(): MapSettlement {
 	const name = pick(settlementStartNames) + pick(settlementEndNames);
 
 	const npcCount = size >= 4 ? 2 : 1;
-	const npcs: NPC[] = [];
+	const npcs: Character[] = [];
 	for (let i = 0; i < npcCount; i++) {
 		npcs.push(generateNPC(-1));
 	}

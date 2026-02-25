@@ -1,9 +1,9 @@
 import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
-import { Settlement, Hex, NPC, Hireling, WeatherResult, AdventureSeed } from "../types/generator";
+import { Settlement, Hex, NpcSummary, Hireling, WeatherResult, AdventureSeed, EncounterResult, ReactionResult } from "../types/generator";
 import { HomebrewData } from "../types/homebrew";
 import { HomebrewRegistry } from "../engine/homebrew";
-import { roll, d6 } from "../engine/dice";
+import { d6 } from "../engine/dice";
 import {
 	settlementDetails, notableFeatures, industries, events,
 	tavernFirstNames, tavernSecondNames, tavernSpecialties,
@@ -11,12 +11,12 @@ import {
 } from "../data/settlements";
 import { landmarks, landmarkDetails } from "../data/landmarks";
 import { mouseNames, settlementStartNames, settlementEndNames } from "../data/names";
-import { generateNPC as generateNPCFromEngine } from "../engine/hexmap";
+import { generateNpcSummary as generateNPCFromEngine } from "../engine/hexmap";
 import { adventureSeeds } from "../data/adventure-seeds";
-import { weatherTable } from "../data/weather";
+import { weatherTable, seasonalEventsTable, weatherIndexFrom2d6 } from "../data/weather";
 import { div, button, span, el } from "../utils/dom-helpers";
 
-type GeneratorType = "settlement" | "hex" | "npc" | "hireling" | "name" | "weather" | "adventure-seed";
+type GeneratorType = "settlement" | "hex" | "npc" | "hireling" | "name" | "weather" | "adventure-seed" | "encounter" | "reaction";
 
 interface GeneratorState {
 	selectedType: GeneratorType;
@@ -53,6 +53,8 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 			["name", "Mouse Name"],
 			["weather", "Weather"],
 			["adventure-seed", "Adventure Seed"],
+			["encounter", "Encounter Check"],
+			["reaction", "Reaction Roll"],
 		];
 		for (const [value, label] of types) {
 			const opt = el("option", { value }, [label]);
@@ -100,6 +102,8 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 			case "name": return this.generateName(hb);
 			case "weather": return this.generateWeather(hb);
 			case "adventure-seed": return this.generateAdventureSeed(hb);
+			case "encounter": return this.generateEncounter();
+			case "reaction": return this.generateReaction();
 		}
 	}
 
@@ -116,7 +120,7 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 		const allIndustries = [...industries, ...(hb.industries ?? [])];
 		const allEvents = [...events, ...(hb.events ?? [])];
 
-		const npcs: NPC[] = [];
+		const npcs: NpcSummary[] = [];
 		const npcCount = size >= 4 ? 2 : 1;
 		for (let i = 0; i < npcCount; i++) {
 			npcs.push(this.generateNPC(hb));
@@ -161,7 +165,7 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 		};
 	}
 
-	private generateNPC(hb: HomebrewData): NPC {
+	private generateNPC(hb: HomebrewData): NpcSummary {
 		// Check if homebrew has full NPC entries to sometimes pick from
 		const customNPCs = hb.npcs ?? [];
 		if (customNPCs.length > 0 && Math.random() < customNPCs.length / (customNPCs.length + 20)) {
@@ -200,26 +204,65 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 	}
 
 	private generateWeather(hb: HomebrewData): WeatherResult {
-		// Merge homebrew weather entries per season
-		const merged: Record<string, string[]> = {};
-		for (const [season, entries] of Object.entries(weatherTable)) {
-			merged[season] = [...entries, ...(hb.weather?.[season] ?? [])];
-		}
+		const seasons = Object.keys(weatherTable);
 		// Add any entirely new seasons from homebrew
 		if (hb.weather) {
-			for (const [season, entries] of Object.entries(hb.weather)) {
-				if (!merged[season]) {
-					merged[season] = entries;
+			for (const season of Object.keys(hb.weather)) {
+				if (!seasons.includes(season)) {
+					seasons.push(season);
 				}
 			}
 		}
 
-		const seasons = Object.keys(merged);
 		const season = this.pick(seasons);
+
+		// Roll 2d6 for SRD weather
+		const roll1 = d6(), roll2 = d6();
+		const total = roll1 + roll2;
+
+		let weather: string;
+		let isPoorWeather = false;
+
+		const srdTable = weatherTable[season];
+		if (srdTable) {
+			const idx = weatherIndexFrom2d6(total);
+			const entry = srdTable[idx];
+			weather = entry.description;
+			isPoorWeather = entry.isPoor;
+		} else {
+			// Homebrew-only season: pick from homebrew entries
+			const hbEntries = hb.weather?.[season] ?? [];
+			weather = hbEntries.length > 0 ? this.pick(hbEntries) : "Clear";
+		}
+
+		// Pick seasonal event if available (d6)
+		const eventTable = seasonalEventsTable[season];
+		const seasonalEvent = eventTable ? this.pick(eventTable) : undefined;
+
 		return {
 			season,
-			weather: this.pick(merged[season]),
+			weather,
+			isPoorWeather,
+			roll: total,
+			seasonalEvent,
 		};
+	}
+
+	private generateEncounter(): EncounterResult {
+		const r = d6();
+		if (r === 1) return { roll: r, result: "encounter", prompt: "An encounter! What lurks nearby?" };
+		if (r === 2) return { roll: r, result: "omen", prompt: "An omen — signs of a nearby creature or event." };
+		return { roll: r, result: "nothing", prompt: "Nothing unusual. The path is clear." };
+	}
+
+	private generateReaction(): ReactionResult {
+		const r1 = d6(), r2 = d6();
+		const total = r1 + r2;
+		if (total <= 2) return { roll: total, reaction: "Hostile", prompt: "How have the mice angered them?" };
+		if (total <= 5) return { roll: total, reaction: "Unfriendly", prompt: "How can they be appeased?" };
+		if (total <= 8) return { roll: total, reaction: "Unsure", prompt: "What could win them over?" };
+		if (total <= 11) return { roll: total, reaction: "Talkative", prompt: "What could they trade?" };
+		return { roll: total, reaction: "Helpful", prompt: "How can they help the mice?" };
 	}
 
 	private generateAdventureSeed(hb: HomebrewData): AdventureSeed {
@@ -278,18 +321,22 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 				break;
 			}
 			case "npc": {
-				const n = data as NPC;
+				const n = data as NpcSummary;
 				card.appendChild(div("mausritter-generator-field", [
-					span("mausritter-label", "Name: "), span("", n.name)
+					span("mausritter-label", "Name: "), span("", `${n.name} ${n.lastName ?? ""}`)
 				]));
 				card.appendChild(div("mausritter-generator-field", [
-					span("mausritter-label", "Occupation: "), span("", n.occupation)
+					span("mausritter-label", "Social Position: "), span("", `${n.socialPosition ?? ""} (payment: ${n.paymentForService ?? "—"})`)
 				]));
 				card.appendChild(div("mausritter-generator-field", [
-					span("mausritter-label", "Trait: "), span("", n.trait)
+					span("mausritter-label", "Quirk: "), span("", n.quirk ?? "")
 				]));
 				card.appendChild(div("mausritter-generator-field", [
 					span("mausritter-label", "Want: "), span("", n.want)
+				]));
+				card.appendChild(div("mausritter-generator-field", [
+					span("mausritter-label", "Stats: "),
+					span("", `HP ${n.hp} | STR ${n.str} | DEX ${n.dex} | WIL ${n.wil}`)
 				]));
 				break;
 			}
@@ -317,13 +364,40 @@ export class GeneratorRenderer extends BaseRenderer<GeneratorState> {
 			case "weather": {
 				const w = data as WeatherResult;
 				card.appendChild(div("mausritter-generator-field", [
-					span("mausritter-label", `${w.season}: `), span("", w.weather)
+					span("mausritter-label", `${w.season} (2d6: ${w.roll}): `),
+					span(w.isPoorWeather ? "mausritter-poor-weather" : "", w.weather)
 				]));
+				if (w.isPoorWeather) {
+					card.appendChild(div("mausritter-generator-field mausritter-poor-weather-note", [
+						"Poor weather — STR save or gain Exhausted per Watch traveled"
+					]));
+				}
+				if (w.seasonalEvent) {
+					card.appendChild(div("mausritter-generator-field", [
+						span("mausritter-label", "Seasonal Event: "), span("", w.seasonalEvent)
+					]));
+				}
 				break;
 			}
 			case "adventure-seed": {
 				const a = data as AdventureSeed;
 				card.appendChild(div("mausritter-generator-field", [a.seed]));
+				break;
+			}
+			case "encounter": {
+				const enc = data as EncounterResult;
+				card.appendChild(div("mausritter-generator-field", [
+					span("mausritter-label", `Roll: ${enc.roll} — `), span("", enc.result.toUpperCase())
+				]));
+				card.appendChild(div("mausritter-generator-field", [enc.prompt]));
+				break;
+			}
+			case "reaction": {
+				const react = data as ReactionResult;
+				card.appendChild(div("mausritter-generator-field", [
+					span("mausritter-label", `Roll: ${react.roll} — `), span("", react.reaction)
+				]));
+				card.appendChild(div("mausritter-generator-field", [react.prompt]));
 				break;
 			}
 		}

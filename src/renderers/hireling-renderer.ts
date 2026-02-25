@@ -1,7 +1,6 @@
 import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
-import { HirelingData } from "../types/hireling";
-import { Item, GridItem } from "../types/character";
+import { Character, Item, GridItem } from "../types/character";
 import { generateHireling, rollMorale } from "../engine/hireling";
 import { hirelingTemplates } from "../data/hirelings";
 import { rollSave, StatName } from "../engine/saves";
@@ -9,7 +8,7 @@ import { canLevelUp, levelUp } from "../engine/advancement";
 import { usageCheck } from "../engine/dice";
 import {
 	removeFromGrid, rotateOnGrid,
-	canPlaceOnGrid, buildCellMap, placeOnGrid,
+	canPlaceOnGrid, buildCellMap, placeOnGrid, isEncumbered,
 	PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
 } from "../engine/inventory";
 import { conditions } from "../data/conditions";
@@ -17,7 +16,7 @@ import { weapons, armour, ammunition, gear } from "../data/items";
 import { spellTemplates } from "../data/spells";
 import { div, button, span, el } from "../utils/dom-helpers";
 import { renderItemDetailPanels } from "./item-detail-panel";
-import { findAllEntitySheets, giveItemToEntity, EntitySheetRef } from "../engine/vault-scanner";
+import { findAllEntitySheets, findPartyHex, giveItemToEntity, findPartySettlement, depositItemInBank, EntitySheetRef } from "../engine/vault-scanner";
 
 export const HIRELING_PACK_ROWS = 1;
 export const HIRELING_PACK_COLS = 2;
@@ -35,7 +34,7 @@ type DragSource = {
 
 type DragData = DragSource | null;
 
-function getHirelingGrid(hireling: HirelingData, gridName: GridName): GridItem[] {
+function getHirelingGrid(hireling: Character, gridName: GridName): GridItem[] {
 	switch (gridName) {
 		case "paw": return hireling.pawGrid;
 		case "body": return hireling.bodyGrid;
@@ -51,7 +50,7 @@ function getGridDims(gridName: GridName): [number, number] {
 	}
 }
 
-export class HirelingRenderer extends BaseRenderer<HirelingData> {
+export class HirelingRenderer extends BaseRenderer<Character> {
 	protected blockType = "mausritter-hireling";
 	private addItemOpen = false;
 	private logOpen = false;
@@ -62,8 +61,8 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	protected render(
 		container: HTMLElement,
-		data: HirelingData | null,
-		updateState: (data: HirelingData) => void
+		data: Character | null,
+		updateState: (data: Character) => void
 	): void {
 		container.addClass("mausritter-hireling");
 
@@ -78,16 +77,27 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		if (!data.packGrid) data.packGrid = [];
 		if (!data.log) data.log = [];
 
+		// Auto-migrate: add characterType, species, and rename old .type to .hirelingType
+		let migrated = false;
+		if (!data.characterType) { data.characterType = "hireling"; migrated = true; }
+		if (!data.species) { data.species = "Mouse"; migrated = true; }
+		if ((data as any).type && !data.hirelingType) {
+			data.hirelingType = (data as any).type;
+			delete (data as any).type;
+			migrated = true;
+		}
+
 		// Auto-assign ID to existing hirelings that lack one
 		if (!data.id) {
 			data.id = crypto.randomUUID();
-			updateState(data);
+			migrated = true;
 		}
+		if (migrated) updateState(data);
 
 		this.renderHireling(container, data, updateState);
 	}
 
-	private renderEmpty(container: HTMLElement, updateState: (data: HirelingData) => void): void {
+	private renderEmpty(container: HTMLElement, updateState: (data: Character) => void): void {
 		const emptyDiv = div("mausritter-character-empty", [
 			"No hireling data. Recruit a hireling!",
 		]);
@@ -115,8 +125,8 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	private renderHireling(
 		container: HTMLElement,
-		hireling: HirelingData,
-		updateState: (data: HirelingData) => void
+		hireling: Character,
+		updateState: (data: Character) => void
 	): void {
 		// Header row: name + type + wages
 		const header = div("mausritter-character-header");
@@ -145,10 +155,10 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 			}, "mausritter-btn mausritter-btn-tiny")
 		);
 
-		if (canLevelUp(hireling as any)) {
+		if (canLevelUp(hireling)) {
 			actionRow.appendChild(
 				button("Level Up!", () => {
-					const result = levelUp(hireling as any);
+					const result = levelUp(hireling);
 					if (result) {
 						hireling.log.push(...result.log);
 						updateState(hireling);
@@ -160,8 +170,22 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		headerTop.appendChild(actionRow);
 		header.appendChild(headerTop);
 
+		// Species input
+		const speciesRow = div("mausritter-species-row");
+		const speciesLabel = span("mausritter-species-label", "Species:");
+		speciesRow.appendChild(speciesLabel);
+		const speciesInput = el("input", { class: "mausritter-species-input", type: "text" }) as HTMLInputElement;
+		speciesInput.value = hireling.species || "Mouse";
+		speciesInput.addEventListener("change", () => {
+			hireling.species = speciesInput.value.trim() || "Mouse";
+			updateState(hireling);
+		});
+		speciesRow.appendChild(speciesInput);
+
+		header.appendChild(speciesRow);
+
 		// Info line
-		const infoText = `Level ${hireling.level} ${hireling.type} | ${hireling.wagesPerDay}p/day`;
+		const infoText = `Level ${hireling.level} ${hireling.species || "Mouse"} ${hireling.hirelingType || ""} | ${hireling.wagesPerDay ?? 0}p/day`;
 		const infoSpan = span("mausritter-character-info", infoText);
 		header.appendChild(infoSpan);
 
@@ -186,14 +210,22 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		resourceRow.appendChild(this.renderXp(hireling, updateState));
 		container.appendChild(resourceRow);
 
+		// Encumbrance warning
+		if (isEncumbered(hireling)) {
+			const warning = div("mausritter-encumbered-warning", [
+				"ENCUMBERED — Cannot run. All saves with Disadvantage."
+			]);
+			container.appendChild(warning);
+		}
+
 		// Inventory
 		container.appendChild(this.renderInventory(hireling, updateState));
 
 		// Item detail panels
 		const itemDetailPanel = renderItemDetailPanels(
 			[hireling.pawGrid, hireling.bodyGrid, hireling.packGrid],
-			hireling as any,
-			updateState as any
+			hireling,
+			updateState
 		);
 		if (itemDetailPanel) container.appendChild(itemDetailPanel);
 
@@ -224,7 +256,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	// ---- Stat / Resource renderers ----
 
-	private renderStat(statName: StatName, hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderStat(statName: StatName, hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const stat = hireling[statName];
 		const box = div("mausritter-stat-box");
 		box.appendChild(div("mausritter-stat-label", [statName.toUpperCase()]));
@@ -245,7 +277,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 		box.appendChild(
 			button("Save", () => {
-				const result = rollSave(hireling as any, statName);
+				const result = rollSave(hireling, statName);
 				hireling.log.push(
 					`${statName.toUpperCase()} save: rolled ${result.roll} vs ${result.statValue} — ${result.success ? "Success!" : "Failure!"}`
 				);
@@ -256,7 +288,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return box;
 	}
 
-	private renderHp(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderHp(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["HP"]));
 		const values = div("mausritter-stat-values");
@@ -282,11 +314,11 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return box;
 	}
 
-	private renderWages(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderWages(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["Wages"]));
 		const wagesInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
-		wagesInput.value = String(hireling.wagesPerDay);
+		wagesInput.value = String(hireling.wagesPerDay ?? 0);
 		wagesInput.addEventListener("change", () => {
 			hireling.wagesPerDay = Math.max(0, parseInt(wagesInput.value) || 0);
 			updateState(hireling);
@@ -296,7 +328,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return box;
 	}
 
-	private renderXp(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderXp(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const box = div("mausritter-resource-box");
 		box.appendChild(div("mausritter-resource-label", ["XP"]));
 		const xpInput = el("input", { class: "mausritter-stat-input mausritter-resource-input", type: "number" }) as HTMLInputElement;
@@ -308,7 +340,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	// ---- Inventory ----
 
-	private renderInventory(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderInventory(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const section = div("mausritter-inventory");
 		section.appendChild(div("mausritter-subtitle", ["Inventory"]));
 
@@ -326,7 +358,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return section;
 	}
 
-	private renderGrid(hireling: HirelingData, gridName: GridName, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderGrid(hireling: Character, gridName: GridName, updateState: (data: Character) => void): HTMLElement {
 		const grid = getHirelingGrid(hireling, gridName);
 		const [rows, cols] = getGridDims(gridName);
 		const cellMap = buildCellMap(grid, rows, cols);
@@ -436,7 +468,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return gridEl;
 	}
 
-	private renderGround(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderGround(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const section = div("mausritter-ground");
 		section.appendChild(div("mausritter-slot-label", ["Ground"]));
 
@@ -515,14 +547,14 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		return null;
 	}
 
-	private getDragItem(hireling: HirelingData, source: DragData): Item | null {
+	private getDragItem(hireling: Character, source: DragData): Item | null {
 		if (!source) return null;
 		if (source.type === "ground") return hireling.ground[source.index] ?? null;
 		const grid = getHirelingGrid(hireling, source.gridName);
 		return grid[source.index]?.item ?? null;
 	}
 
-	private removeDragSource(hireling: HirelingData, source: DragData): void {
+	private removeDragSource(hireling: Character, source: DragData): void {
 		if (!source) return;
 		if (source.type === "ground") {
 			hireling.ground.splice(source.index, 1);
@@ -626,15 +658,25 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 		anchor: HTMLElement,
 		item: Item,
 		removeItem: () => void,
-		hireling: HirelingData,
-		updateState: (data: HirelingData) => void
+		hireling: Character,
+		updateState: (data: Character) => void
 	): void {
 		const existing = document.querySelector(".mausritter-give-dropdown");
 		if (existing) existing.remove();
 
-		findAllEntitySheets(this.plugin).then(sheets => {
-			const filtered = sheets.filter(s => !hireling.id || s.id !== hireling.id);
-			if (filtered.length === 0) {
+		Promise.all([
+			findAllEntitySheets(this.plugin),
+			findPartyHex(this.plugin),
+			findPartySettlement(this.plugin),
+		]).then(([sheets, partyHex, settlement]) => {
+			const filtered = sheets.filter(s => {
+				if (hireling.id && s.id === hireling.id) return false;
+				if (s.entityType === "npc") {
+					return s.hexId != null && s.hexId >= 0 && s.hexId === partyHex;
+				}
+				return true;
+			});
+			if (filtered.length === 0 && !settlement) {
 				anchor.textContent = "!";
 				setTimeout(() => { anchor.textContent = "\u2192"; }, 1500);
 				return;
@@ -644,6 +686,20 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 			const rect = anchor.getBoundingClientRect();
 			dropdown.style.top = `${rect.bottom + window.scrollY}px`;
 			dropdown.style.left = `${rect.left + window.scrollX}px`;
+
+			// Settlement bank option (only if party is at a settlement)
+			if (settlement) {
+				const bankOption = button(`Bank (${settlement.settlementName})`, async () => {
+					const success = await depositItemInBank(this.plugin, settlement.path, settlement.hexId, { ...item });
+					if (success) {
+						removeItem();
+						hireling.log.push(`Deposited ${item.name} in ${settlement.settlementName} bank.`);
+						updateState(hireling);
+					}
+					dropdown.remove();
+				}, "mausritter-give-dropdown-option");
+				dropdown.appendChild(bankOption);
+			}
 
 			for (const sheet of filtered) {
 				const label = `${sheet.name} (${sheet.entityType})`;
@@ -673,7 +729,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	// ---- Add Item ----
 
-	private renderAddItem(hireling: HirelingData, updateState: (data: HirelingData) => void): HTMLElement {
+	private renderAddItem(hireling: Character, updateState: (data: Character) => void): HTMLElement {
 		const section = div("mausritter-add-item");
 
 		const row = div("mausritter-add-item-row");
@@ -803,7 +859,7 @@ export class HirelingRenderer extends BaseRenderer<HirelingData> {
 
 	// ---- Log ----
 
-	private renderLog(hireling: HirelingData): HTMLElement {
+	private renderLog(hireling: Character): HTMLElement {
 		const logSection = div("mausritter-log");
 		const entries = [...hireling.log].reverse().slice(0, 20);
 		for (const entry of entries) {

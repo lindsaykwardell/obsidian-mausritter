@@ -6,10 +6,11 @@ import { usageCheck } from "../engine/dice";
 import { buildCellMap, migrateOldInventory, PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS } from "../engine/inventory";
 import { div, button, span, el } from "../utils/dom-helpers";
 import { renderItemDetailPanels } from "./item-detail-panel";
+import { findAllEntitySheets, findPartyHex, EntitySheetRef } from "../engine/vault-scanner";
 
 export class CombatCardRenderer extends BaseRenderer<Character> {
 	protected blockType = "mausritter-combat-card";
-	protected sourceBlockType = "mausritter-character";
+	protected sourceBlockTypes = ["mausritter-character", "mausritter-hireling"];
 
 	constructor(plugin: Plugin) {
 		super(plugin);
@@ -23,16 +24,40 @@ export class CombatCardRenderer extends BaseRenderer<Character> {
 		container.addClass("mausritter-combat-card");
 
 		if (!data) {
-			// Show a source file input so the user can link a character
+			// Show a dropdown of available entities so the user can link one
 			const emptyDiv = div("mausritter-combat-empty");
 			emptyDiv.appendChild(span("mausritter-combat-empty-hint", "Link a character file:"));
-			const sourceInput = el("input", { class: "mausritter-oracle-input", type: "text", placeholder: "Character file name..." }) as HTMLInputElement;
-			emptyDiv.appendChild(sourceInput);
+
+			const selectEl = el("select", { class: "mausritter-select" }) as HTMLSelectElement;
+			selectEl.appendChild(el("option", { value: "" }, ["Loading..."]));
+			emptyDiv.appendChild(selectEl);
+
+			// Populate dropdown asynchronously
+			Promise.all([findAllEntitySheets(this.plugin), findPartyHex(this.plugin)]).then(([sheets, partyHex]) => {
+				const filtered = sheets.filter(s => {
+					if (s.entityType === "npc") {
+						return s.hexId != null && s.hexId >= 0 && s.hexId === partyHex;
+					}
+					return true;
+				});
+
+				selectEl.empty();
+				if (filtered.length === 0) {
+					selectEl.appendChild(el("option", { value: "" }, ["No entities found"]));
+				} else {
+					selectEl.appendChild(el("option", { value: "" }, ["Select an entity..."]));
+					for (const sheet of filtered) {
+						const label = `${sheet.name} (${sheet.entityType})`;
+						selectEl.appendChild(el("option", { value: sheet.path }, [label]));
+					}
+				}
+			});
+
 			emptyDiv.appendChild(
 				button("Link", () => {
-					const name = sourceInput.value.trim();
-					if (!name) return;
-					updateState({ source: name } as any);
+					const path = selectEl.value.trim();
+					if (!path) return;
+					updateState({ source: path } as any);
 				}, "mausritter-btn mausritter-btn-primary")
 			);
 			container.appendChild(emptyDiv);
@@ -45,7 +70,12 @@ export class CombatCardRenderer extends BaseRenderer<Character> {
 		// Name + background
 		const header = div("mausritter-combat-header");
 		header.appendChild(span("mausritter-combat-name", data.name));
-		header.appendChild(span("mausritter-combat-info", `Lv${data.level} ${data.background}`));
+		const info = data.characterType === "npc"
+			? `Lv${data.level} ${data.species || "Mouse"} NPC`
+			: data.characterType === "hireling"
+			? `Lv${data.level} ${data.hirelingType || "Hireling"}`
+			: `Lv${data.level} ${data.background || ""}`;
+		header.appendChild(span("mausritter-combat-info", info));
 		container.appendChild(header);
 
 		// Stats row

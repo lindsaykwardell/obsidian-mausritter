@@ -122,7 +122,9 @@ export function generateCharacter(): Character {
 
 	return {
 		id: crypto.randomUUID(),
+		characterType: "player",
 		name,
+		species: "Mouse",
 		level: 1,
 		xp: 0,
 		hp: { current: hpRoll, max: hpRoll },

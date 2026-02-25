@@ -2,6 +2,7 @@ import { Plugin } from "obsidian";
 import { BaseRenderer } from "./base-renderer";
 import { Faction, FactionGoal } from "../types/generator";
 import { generateFaction } from "../engine/faction";
+import { d6 } from "../engine/dice";
 import { div, button, span, el } from "../utils/dom-helpers";
 
 export class FactionRenderer extends BaseRenderer<Faction> {
@@ -123,7 +124,104 @@ export class FactionRenderer extends BaseRenderer<Faction> {
 		}
 		goalEl.appendChild(track);
 
+		// Progress Roll button (only for incomplete goals)
+		if (goal.progress < goal.total) {
+			goalEl.appendChild(
+				button("Progress Roll", () => {
+					this.renderProgressRollPanel(goalEl, goal, data, updateState);
+				}, "mausritter-btn mausritter-btn-small mausritter-faction-progress-roll-btn")
+			);
+		} else {
+			// Goal complete — offer to add a new resource
+			goalEl.appendChild(
+				button("+ New Resource", () => {
+					data.resources.push("New resource");
+					updateState(data);
+				}, "mausritter-btn mausritter-btn-small")
+			);
+		}
+
 		return goalEl;
+	}
+
+	private renderProgressRollPanel(
+		goalEl: HTMLElement,
+		goal: FactionGoal,
+		data: Faction,
+		updateState: (data: Faction) => void
+	): void {
+		// Remove existing panel if any
+		const existing = goalEl.querySelector(".mausritter-faction-roll-panel");
+		if (existing) { existing.remove(); return; }
+
+		const panel = div("mausritter-faction-roll-panel");
+
+		const diceRoll = d6();
+		let ownBonus = 0;
+		let rivalPenalty = 0;
+
+		const rollLabel = div("mausritter-faction-roll-dice", [`d6 roll: ${diceRoll}`]);
+		panel.appendChild(rollLabel);
+
+		// Own resource checkboxes
+		const ownSection = div("mausritter-faction-roll-section");
+		ownSection.appendChild(span("mausritter-label", "Own relevant resources (+1 each):"));
+		const checkboxes: HTMLInputElement[] = [];
+		for (const resource of data.resources) {
+			const label = document.createElement("label");
+			label.className = "mausritter-faction-roll-checkbox-label";
+			const cb = document.createElement("input");
+			cb.type = "checkbox";
+			cb.addEventListener("change", () => {
+				ownBonus = checkboxes.filter(c => c.checked).length;
+				updateTotal();
+			});
+			checkboxes.push(cb);
+			label.appendChild(cb);
+			label.appendChild(document.createTextNode(` ${resource}`));
+			ownSection.appendChild(label);
+		}
+		panel.appendChild(ownSection);
+
+		// Rival resources
+		const rivalSection = div("mausritter-faction-roll-section");
+		rivalSection.appendChild(span("mausritter-label", "Rival relevant resources (-1 each):"));
+		const rivalInput = el("input", { class: "mausritter-stat-input", type: "number" }) as HTMLInputElement;
+		rivalInput.value = "0";
+		rivalInput.min = "0";
+		rivalInput.addEventListener("change", () => {
+			rivalPenalty = Math.max(0, parseInt(rivalInput.value) || 0);
+			updateTotal();
+		});
+		rivalSection.appendChild(rivalInput);
+		panel.appendChild(rivalSection);
+
+		// Total display
+		const totalEl = div("mausritter-faction-roll-total");
+		const updateTotal = () => {
+			const total = diceRoll + ownBonus - rivalPenalty;
+			let progressGain = 0;
+			if (total >= 6) progressGain = 2;
+			else if (total >= 4) progressGain = 1;
+			totalEl.textContent = `Total: ${total} → +${progressGain} progress`;
+		};
+		updateTotal();
+		panel.appendChild(totalEl);
+
+		// Apply button
+		panel.appendChild(
+			button("Apply", () => {
+				const total = diceRoll + ownBonus - rivalPenalty;
+				let progressGain = 0;
+				if (total >= 6) progressGain = 2;
+				else if (total >= 4) progressGain = 1;
+				goal.progress = Math.min(goal.total, goal.progress + progressGain);
+				panel.remove();
+				updateState(data);
+			}, "mausritter-btn mausritter-btn-primary mausritter-btn-small")
+		);
+
+		goalEl.appendChild(panel);
 	}
 
 	// ── Edit view ──

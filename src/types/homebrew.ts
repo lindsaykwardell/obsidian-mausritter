@@ -1,11 +1,11 @@
 import { Creature } from "./creature";
 import { Item } from "./character";
-import { NPC } from "./generator";
+import { NpcSummary } from "./generator";
 
 export interface HomebrewData {
 	creatures?: Creature[];
 	items?: Omit<Item, "equipped">[];
-	npcs?: NPC[];
+	npcs?: NpcSummary[];
 	names?: string[];
 	"adventure-seeds"?: string[];
 	weather?: Record<string, string[]>;

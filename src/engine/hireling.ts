@@ -1,4 +1,5 @@
-import { HirelingData, WarbandData } from "../types/hireling";
+import { Character } from "../types/character";
+import { WarbandData } from "../types/hireling";
 import { hirelingTemplates } from "../data/hirelings";
 import { d6, d20, rollMultiple } from "./dice";
 import { mouseNames, mouseLastNames, settlementStartNames, settlementEndNames } from "../data/names";
@@ -52,7 +53,7 @@ function generateWarbandName(vaultNames?: string[]): string {
 	}
 }
 
-export function generateHireling(typeName: string): HirelingData {
+export function generateHireling(typeName: string): Character {
 	const template = hirelingTemplates.find(t => t.type === typeName);
 	const wages = template?.wagesPerDay ?? 1;
 
@@ -67,8 +68,10 @@ export function generateHireling(typeName: string): HirelingData {
 
 	return {
 		id: crypto.randomUUID(),
+		characterType: "hireling",
 		name,
-		type: typeName,
+		species: "Mouse",
+		hirelingType: typeName,
 		level: 1,
 		xp: 0,
 		hp: { current: hpVal, max: hpVal },
@@ -112,7 +115,7 @@ export interface MoraleResult {
 	fled: boolean;
 }
 
-export function rollMorale(data: HirelingData | WarbandData): MoraleResult {
+export function rollMorale(data: Character | WarbandData): MoraleResult {
 	const wilValue = data.wil.current;
 	const r = d20();
 	return {

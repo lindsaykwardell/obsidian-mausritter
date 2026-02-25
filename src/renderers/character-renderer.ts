@@ -4,11 +4,11 @@ import { Character, Item, GridItem } from "../types/character";
 import { generateCharacter } from "../engine/character-creation";
 import { rollSave, StatName } from "../engine/saves";
 import { shortRest, longRest, fullRest } from "../engine/rest";
-import { levelUp, canLevelUp } from "../engine/advancement";
+import { levelUp, canLevelUp, getGritCapacity } from "../engine/advancement";
 import { usageCheck } from "../engine/dice";
 import {
 	addConditionToInventory, addItemToPackGrid, removeFromGrid, rotateOnGrid,
-	canPlaceOnGrid, buildCellMap, migrateOldInventory, placeOnGrid,
+	canPlaceOnGrid, buildCellMap, migrateOldInventory, placeOnGrid, isEncumbered,
 	PACK_ROWS, PACK_COLS, PAW_ROWS, PAW_COLS, BODY_ROWS, BODY_COLS,
 } from "../engine/inventory";
 import { conditions } from "../data/conditions";
@@ -16,7 +16,7 @@ import { weapons, armour, ammunition, gear } from "../data/items";
 import { spellTemplates } from "../data/spells";
 import { div, button, span, el } from "../utils/dom-helpers";
 import { renderItemDetailPanels } from "./item-detail-panel";
-import { findAllEntitySheets, giveItemToEntity, EntitySheetRef } from "../engine/vault-scanner";
+import { findAllEntitySheets, findPartyHex, giveItemToEntity, findPartySettlement, depositItemInBank, EntitySheetRef } from "../engine/vault-scanner";
 
 type GridName = "paw" | "body" | "pack";
 
@@ -72,11 +72,17 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		migrateOldInventory(data);
 		if (!data.ground) data.ground = [];
 
+		// Auto-migrate: add characterType and species if missing
+		let migrated = false;
+		if (!data.characterType) { data.characterType = "player"; migrated = true; }
+		if (!data.species) { data.species = "Mouse"; migrated = true; }
+
 		// Auto-assign ID to existing characters that lack one
 		if (!data.id) {
 			data.id = crypto.randomUUID();
-			updateState(data);
+			migrated = true;
 		}
+		if (migrated) updateState(data);
 
 		this.renderCharacter(container, data, updateState);
 	}
@@ -151,8 +157,22 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		headerTop.appendChild(restRow);
 		header.appendChild(headerTop);
 
+		// Species input
+		const speciesRow = div("mausritter-species-row");
+		const speciesLabel = span("mausritter-species-label", "Species:");
+		speciesRow.appendChild(speciesLabel);
+		const speciesInput = el("input", { class: "mausritter-species-input", type: "text" }) as HTMLInputElement;
+		speciesInput.value = character.species || "Mouse";
+		speciesInput.addEventListener("change", () => {
+			character.species = speciesInput.value.trim() || "Mouse";
+			updateState(character);
+		});
+		speciesRow.appendChild(speciesInput);
+
+		header.appendChild(speciesRow);
+
 		header.appendChild(span("mausritter-character-info",
-			`Level ${character.level} ${character.background} | ${character.birthsign} | ${character.coat} | ${character.physicalDetail}`
+			`Level ${character.level} ${character.species || "Mouse"} ${character.background || ""} | ${character.birthsign || ""} | ${character.coat || ""} | ${character.physicalDetail || ""}`
 		));
 		container.appendChild(header);
 
@@ -169,6 +189,20 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		resourceRow.appendChild(this.renderPips(character, updateState));
 		resourceRow.appendChild(this.renderXp(character, updateState));
 		container.appendChild(resourceRow);
+
+		// Grit slots (Level 2+)
+		const gritCapacity = getGritCapacity(character.level);
+		if (gritCapacity > 0) {
+			container.appendChild(this.renderGritSlots(character, updateState));
+		}
+
+		// Encumbrance warning
+		if (isEncumbered(character)) {
+			const warning = div("mausritter-encumbered-warning", [
+				"ENCUMBERED — Cannot run. All saves with Disadvantage."
+			]);
+			container.appendChild(warning);
+		}
 
 		// Inventory
 		container.appendChild(this.renderInventory(character, updateState));
@@ -289,6 +323,59 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		xpInput.addEventListener("change", () => { character.xp = parseInt(xpInput.value) || 0; updateState(character); });
 		box.appendChild(xpInput);
 		return box;
+	}
+
+	// ---- Grit Slots ----
+
+	private renderGritSlots(character: Character, updateState: (data: Character) => void): HTMLElement {
+		const gritCapacity = getGritCapacity(character.level);
+		if (!character.gritSlots) character.gritSlots = [];
+		while (character.gritSlots.length < gritCapacity) {
+			character.gritSlots.push(null);
+		}
+
+		const section = div("mausritter-grit-section");
+		section.appendChild(div("mausritter-slot-label", ["Grit"]));
+
+		const slotsRow = div("mausritter-grit-slots");
+		for (let i = 0; i < gritCapacity; i++) {
+			const slot = character.gritSlots[i];
+			if (slot) {
+				const slotEl = div("mausritter-grit-slot mausritter-grit-slot-filled");
+				slotEl.appendChild(span("mausritter-grit-condition-name", slot.name));
+				slotEl.appendChild(span("mausritter-grit-condition-hint", "(clears on full rest)"));
+				slotsRow.appendChild(slotEl);
+			} else {
+				const slotEl = div("mausritter-grit-slot mausritter-grit-slot-empty");
+				slotEl.textContent = "Empty";
+
+				// Accept condition drops
+				slotEl.addEventListener("dragover", (e) => {
+					e.preventDefault();
+					slotEl.addClass("mausritter-slot-dragover");
+				});
+				slotEl.addEventListener("dragleave", () => {
+					slotEl.removeClass("mausritter-slot-dragover");
+				});
+				slotEl.addEventListener("drop", (e) => {
+					e.preventDefault();
+					slotEl.removeClass("mausritter-slot-dragover");
+					const data = e.dataTransfer?.getData("text/plain");
+					const source = this.parseDragData(data);
+					if (!source) return;
+					const item = this.getDragItem(character, source);
+					if (!item || item.type !== "condition") return;
+					this.removeDragSource(character, source);
+					character.gritSlots![i] = { ...item };
+					character.log.push(`${item.name} absorbed by Grit (negated).`);
+					updateState(character);
+				});
+
+				slotsRow.appendChild(slotEl);
+			}
+		}
+		section.appendChild(slotsRow);
+		return section;
 	}
 
 	// ---- Inventory ----
@@ -636,9 +723,19 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 		const existing = document.querySelector(".mausritter-give-dropdown");
 		if (existing) existing.remove();
 
-		findAllEntitySheets(this.plugin).then(sheets => {
-			const filtered = sheets.filter(s => !character.id || s.id !== character.id);
-			if (filtered.length === 0) {
+		Promise.all([
+			findAllEntitySheets(this.plugin),
+			findPartyHex(this.plugin),
+			findPartySettlement(this.plugin),
+		]).then(([sheets, partyHex, settlement]) => {
+			const filtered = sheets.filter(s => {
+				if (character.id && s.id === character.id) return false;
+				if (s.entityType === "npc") {
+					return s.hexId != null && s.hexId >= 0 && s.hexId === partyHex;
+				}
+				return true;
+			});
+			if (filtered.length === 0 && !settlement) {
 				anchor.textContent = "!";
 				setTimeout(() => { anchor.textContent = "\u2192"; }, 1500);
 				return;
@@ -648,6 +745,20 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 			const rect = anchor.getBoundingClientRect();
 			dropdown.style.top = `${rect.bottom + window.scrollY}px`;
 			dropdown.style.left = `${rect.left + window.scrollX}px`;
+
+			// Settlement bank option (only if party is at a settlement)
+			if (settlement) {
+				const bankOption = button(`Bank (${settlement.settlementName})`, async () => {
+					const success = await depositItemInBank(this.plugin, settlement.path, settlement.hexId, { ...item });
+					if (success) {
+						removeItem();
+						character.log.push(`Deposited ${item.name} in ${settlement.settlementName} bank.`);
+						updateState(character);
+					}
+					dropdown.remove();
+				}, "mausritter-give-dropdown-option");
+				dropdown.appendChild(bankOption);
+			}
 
 			for (const sheet of filtered) {
 				const label = `${sheet.name} (${sheet.entityType})`;

@@ -155,6 +155,11 @@ export function addConditionToInventory(character: Character, conditionName: str
 	return placeOnGrid(character.packGrid, conditionItem, PACK_ROWS, PACK_COLS);
 }
 
+/** Check if character is encumbered (items overflow beyond grid capacity) */
+export function isEncumbered(character: Character): boolean {
+	return character.ground.length > 0;
+}
+
 /** Migrate old InventorySlot[] format to grid format */
 export function migrateOldInventory(character: Character): void {
 	// If character already has grid fields, skip
