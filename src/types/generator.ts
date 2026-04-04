@@ -173,4 +173,5 @@ export interface TreasureItem {
 export interface TreasureHoard {
 	items: TreasureItem[];
 	bonusDice: number;
+	manual?: boolean;
 }

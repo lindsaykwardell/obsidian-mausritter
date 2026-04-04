@@ -48,6 +48,24 @@ export class WarbandRenderer extends BaseRenderer<WarbandData> {
 				updateState(warband);
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+		container.appendChild(
+			button("Create Blank Warband", () => {
+				updateState({
+					name: "",
+					level: 1,
+					xp: 0,
+					hp: { current: 1, max: 1 },
+					str: { current: 10, max: 10 },
+					dex: { current: 10, max: 10 },
+					wil: { current: 10, max: 10 },
+					armour: 0,
+					damage: "d6",
+					upkeepPerWeek: 0,
+					notes: "",
+					log: [],
+				});
+			}, "mausritter-btn")
+		);
 	}
 
 	private renderWarband(

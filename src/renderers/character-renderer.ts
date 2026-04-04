@@ -98,6 +98,28 @@ export class CharacterRenderer extends BaseRenderer<Character> {
 				updateState(character);
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+		container.appendChild(
+			button("Create Blank Character", () => {
+				updateState({
+					id: crypto.randomUUID(),
+					characterType: "player",
+					name: "",
+					species: "Mouse",
+					level: 1,
+					xp: 0,
+					hp: { current: 0, max: 0 },
+					str: { current: 0, max: 0 },
+					dex: { current: 0, max: 0 },
+					wil: { current: 0, max: 0 },
+					pips: 0,
+					pawGrid: [],
+					bodyGrid: [],
+					packGrid: [],
+					ground: [],
+					log: [],
+				});
+			}, "mausritter-btn")
+		);
 	}
 
 	private renderCharacter(

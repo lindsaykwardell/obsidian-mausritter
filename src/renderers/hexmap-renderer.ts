@@ -129,6 +129,28 @@ export class HexMapRenderer extends BaseRenderer<HexMap> {
 				updateState(generateHexMap());
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+		container.appendChild(
+			button("Create Blank Map", () => {
+				const hexes: MapHex[] = [];
+				for (let i = 0; i < 19; i++) {
+					hexes.push({
+						id: i,
+						name: "",
+						terrain: "countryside",
+						landmark: "",
+						description: "",
+						settlement: null,
+						npcs: [],
+					});
+				}
+				updateState({
+					name: "",
+					hexes,
+					selectedHex: -1,
+					partyHex: -1,
+				});
+			}, "mausritter-btn")
+		);
 	}
 
 	private renderGrid(grid: HTMLElement, state: HexMap, updateState: (data: HexMap) => void): void {

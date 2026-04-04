@@ -29,7 +29,7 @@ export default class MausritterPlugin extends Plugin {
 		const generatorRenderer = new GeneratorRenderer(this, this.homebrew);
 		const creatureRenderer = new CreatureRenderer(this, this.homebrew);
 		const spellRenderer = new SpellRenderer(this);
-		const dataRenderer = new DataRenderer(this);
+		const dataRenderer = new DataRenderer(this, this.homebrew);
 		const combatCardRenderer = new CombatCardRenderer(this);
 		const hexMapRenderer = new HexMapRenderer(this);
 		const hexDetailRenderer = new HexDetailRenderer(this, hexMapRenderer);

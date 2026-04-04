@@ -1191,6 +1191,147 @@
 	font-style: italic;
 }
 
+.mausritter-data-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.mausritter-data-header .mausritter-title {
+	margin: 0;
+}
+
+.mausritter-data-edit-section {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	margin: 6px 0;
+}
+
+.mausritter-data-edit-section > summary {
+	padding: 6px 10px;
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 0.9em;
+	background: var(--background-secondary);
+	border-radius: 4px;
+	user-select: none;
+}
+
+.mausritter-data-edit-section[open] > summary {
+	border-bottom: 1px solid var(--background-modifier-border);
+	border-radius: 4px 4px 0 0;
+}
+
+.mausritter-data-edit-content {
+	padding: 8px;
+}
+
+.mausritter-data-add-row {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.mausritter-data-entry-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+.mausritter-data-input {
+	padding: 4px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.85em;
+}
+
+.mausritter-data-input-wide {
+	flex: 1;
+	min-width: 0;
+}
+
+.mausritter-data-input-short {
+	width: 80px;
+}
+
+.mausritter-data-input-number {
+	width: 60px;
+}
+
+.mausritter-data-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	margin: 6px 0;
+	background: var(--background-primary);
+}
+
+.mausritter-data-card-summary {
+	padding: 6px 8px;
+	cursor: pointer;
+	font-size: 0.85em;
+}
+
+.mausritter-data-card-form {
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.mausritter-data-field {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.mausritter-data-field-label {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.mausritter-data-stats-row {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.mausritter-data-stat-field {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	align-items: center;
+}
+
+.mausritter-data-attack-row {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+}
+
+.mausritter-data-record-group {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 8px;
+	margin-bottom: 8px;
+}
+
+.mausritter-data-record-group-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 6px;
+}
+
+.mausritter-btn-small {
+	font-size: 0.8em;
+	padding: 3px 8px;
+}
+
 /* ============ COMBAT CARD ============ */
 
 .mausritter-combat-card .mausritter-block {

@@ -69,6 +69,26 @@ export class AdventureSiteRenderer extends BaseRenderer<AdventureSite> {
 				updateState(generateAdventureSite());
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+		empty.appendChild(
+			button("Create Blank Adventure Site", () => {
+				updateState({
+					name: "New Adventure Site",
+					construction: "",
+					ruinAction: "",
+					ruination: "",
+					inhabitant: "",
+					inhabitantAction: "",
+					inhabitantGoal: "",
+					secretHidden: "",
+					secret: "",
+					rooms: [],
+					gridRows: 6,
+					gridCols: 6,
+					selectedRoom: -1,
+					partyMembers: [],
+				});
+			}, "mausritter-btn")
+		);
 		container.appendChild(empty);
 	}
 

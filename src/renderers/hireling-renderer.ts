@@ -121,6 +121,29 @@ export class HirelingRenderer extends BaseRenderer<Character> {
 		);
 
 		container.appendChild(row);
+
+		container.appendChild(
+			button("Create Blank Hireling", () => {
+				updateState({
+					id: crypto.randomUUID(),
+					characterType: "hireling",
+					name: "",
+					species: "Mouse",
+					level: 1,
+					xp: 0,
+					hp: { current: 0, max: 0 },
+					str: { current: 0, max: 0 },
+					dex: { current: 0, max: 0 },
+					wil: { current: 0, max: 0 },
+					pawGrid: [],
+					bodyGrid: [],
+					packGrid: [],
+					ground: [],
+					log: [],
+					wagesPerDay: 0,
+				});
+			}, "mausritter-btn")
+		);
 	}
 
 	private renderHireling(

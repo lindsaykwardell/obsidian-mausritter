@@ -31,7 +31,7 @@ export class TreasureRenderer extends BaseRenderer<TreasureHoard> {
 	): void {
 		container.addClass("mausritter-treasure");
 
-		if (!data || !data.items || data.items.length === 0) {
+		if (!data || !data.items || (data.items.length === 0 && !data.manual)) {
 			this.renderEmpty(container, updateState);
 			return;
 		}
@@ -92,6 +92,13 @@ export class TreasureRenderer extends BaseRenderer<TreasureHoard> {
 				const bonusDice = checked.filter(Boolean).length;
 				updateState(generateTreasureHoard(bonusDice));
 			}, "mausritter-btn mausritter-btn-primary")
+		);
+
+		empty.appendChild(
+			button("Create Blank Treasure", () => {
+				this.editing = true;
+				updateState({ items: [], bonusDice: 0, manual: true });
+			}, "mausritter-btn")
 		);
 
 		container.appendChild(empty);

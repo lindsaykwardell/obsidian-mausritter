@@ -45,6 +45,15 @@ export class FactionRenderer extends BaseRenderer<Faction> {
 				updateState(generateFaction());
 			}, "mausritter-btn mausritter-btn-primary")
 		);
+		empty.appendChild(
+			button("Create Blank Faction", () => {
+				updateState({
+					name: "New Faction",
+					resources: [],
+					goals: [],
+				});
+			}, "mausritter-btn")
+		);
 		container.appendChild(empty);
 	}
 
